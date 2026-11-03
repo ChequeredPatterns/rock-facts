@@ -50,6 +50,30 @@ Correcting any of them against the real documentation is a one-file change; no
 other part of the app needs to move. On Rent Events deliberately refuses to run
 until configured rather than silently returning wrong data.
 
+### Verifying a connector against the live API
+
+```bash
+npm run verify:connecteam
+```
+
+Probes the real Connecteam API with your key and reports what is actually
+true: which auth header works, which endpoint paths exist, the real response
+field names, and — importantly — whether shift timestamps are in seconds,
+milliseconds or ISO strings. That last one is the most likely source of a
+silent wrong-data bug, since a seconds value read as milliseconds puts every
+shift in 1970.
+
+It needs two things:
+
+1. `CONNECTEAM_API_KEY` set as an **environment secret**, not pasted into a
+   chat or passed on the command line (it would persist in shell history).
+2. Network access to `api.connecteam.com`. In a cloud session, add that host
+   under the environment's **Allowed domains**.
+
+The output is deliberately shapes only — field names, types and detected
+timestamp units, never record values — so it is safe to share. You do not need
+to find `CONNECTEAM_SCHEDULER_ID` by hand; the script reports it.
+
 ---
 
 ## How it works
