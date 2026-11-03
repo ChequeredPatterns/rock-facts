@@ -136,10 +136,23 @@ cosmetic — see `businessInstant()` in `src/lib/domain.ts`.
 
 ---
 
-## Branding
+## Look and feel
+
+Dark, futuristic: deep-space base, glass panels, luminous hairlines, and a
+cyan-to-violet accent range. The whole visual layer lives in
+`src/app/globals.css` as CSS custom properties — changing `--cyan`, `--violet`
+or the surface tokens at the top of that file re-themes the entire app without
+touching a component.
+
+Colour is kept meaningful rather than decorative: cyan is "normal", amber and
+red are real warnings. Nothing glows unless it means something, so a red glow
+on screen always indicates something that needs doing.
+
+Type is Chakra Petch for display, Inter for body, and JetBrains Mono for all
+figures and times, so numbers align in columns.
 
 The wordmark is rendered in CSS (`src/components/Wordmark.tsx`) so it stays
-crisp at any size and adapts automatically to dark mode. To use the supplied
-logo file instead, drop it at `public/logo.png` and follow the two-line note in
-that file. Note the supplied logo is solid black and will need a white variant
-for dark backgrounds — which is why CSS is the default.
+crisp at any size and sits correctly on the dark background. The supplied logo
+artwork is solid black and would be invisible here; to use a real file instead,
+save a **white** version at `public/logo.png` and follow the two-line note in
+that component.

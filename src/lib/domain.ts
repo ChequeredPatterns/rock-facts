@@ -256,15 +256,32 @@ export function businessDateParts(
   return { year, month, day };
 }
 
-export function formatEventTime(job: Job): string {
-  if (!job.eventStart) return 'Date TBC';
-  const fmt = new Intl.DateTimeFormat('en-NZ', {
+function timeFormatter(): Intl.DateTimeFormat {
+  return new Intl.DateTimeFormat('en-NZ', {
     timeZone: BUSINESS_TZ,
     hour: 'numeric',
     minute: '2-digit',
     hour12: true,
   });
+}
+
+export function formatEventTime(job: Job): string {
+  if (!job.eventStart) return 'Date TBC';
+  const fmt = timeFormatter();
   const start = fmt.format(new Date(job.eventStart));
   if (!job.eventEnd) return start;
   return `${start} – ${fmt.format(new Date(job.eventEnd))}`;
+}
+
+/**
+ * Start and end as separate strings, so the UI can stack them rather than
+ * wrapping a single "9:00 am – 6:00 pm" string mid-value.
+ */
+export function eventTimeParts(job: Job): { start: string; end?: string } {
+  if (!job.eventStart) return { start: 'TBC' };
+  const fmt = timeFormatter();
+  return {
+    start: fmt.format(new Date(job.eventStart)),
+    end: job.eventEnd ? fmt.format(new Date(job.eventEnd)) : undefined,
+  };
 }

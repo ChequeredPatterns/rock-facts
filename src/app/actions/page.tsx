@@ -58,7 +58,7 @@ function ActionCard({ item, now }: { item: ActionItem; now: Date }) {
             Open in {SYSTEM_LABELS[item.actIn]} →
           </a>
         ) : (
-          <span style={{ color: 'var(--ink-faint)' }}>({SYSTEM_LABELS[item.actIn]})</span>
+          <span className="chip ghost">({SYSTEM_LABELS[item.actIn]})</span>
         )}
       </div>
     </div>

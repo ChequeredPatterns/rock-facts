@@ -35,41 +35,32 @@ export default async function RootLayout({ children }: { children: React.ReactNo
 
   return (
     <html lang="en-NZ">
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link
+          href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;700&display=swap"
+          rel="stylesheet"
+        />
+        <meta name="theme-color" content="#04060d" />
+      </head>
       <body>
         <div className="shell">
           <header className="topbar">
-            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 16 }}>
-              <Wordmark size={19} />
-              <div
-                style={{
-                  borderLeft: '3px solid var(--rule)',
-                  paddingLeft: 14,
-                  paddingBottom: 2,
-                }}
-              >
-                <div
-                  style={{
-                    fontFamily: 'var(--font-display)',
-                    fontWeight: 800,
-                    textTransform: 'uppercase',
-                    fontSize: 19,
-                    lineHeight: 1,
-                    letterSpacing: '-0.01em',
-                  }}
-                >
-                  Central
-                </div>
-                <div style={{ fontSize: 11.5, color: 'var(--ink-faint)', marginTop: 3 }}>
-                  {today}
-                </div>
+            <div className="brand">
+              <Wordmark size={17} />
+              <div className="brand-divider" />
+              <div>
+                <div className="brand-sub">Central</div>
+                <div className="brand-date">{today}</div>
               </div>
             </div>
 
             <nav className="nav">
               <a href="/">Timeline</a>
               <a href="/actions">
-                Action needed
-                {urgentCount > 0 ? <span className="count">({urgentCount})</span> : null}
+                Action
+                {urgentCount > 0 ? <span className="count">{urgentCount}</span> : null}
               </a>
               <a href="/setup">Setup</a>
             </nav>

@@ -160,6 +160,7 @@ export default async function TimelinePage() {
               <div className="day-head">
                 <span className="dow">{dow}</span>
                 <span className="date">{date}</span>
+                <span className="rule" />
                 <span className="relative">{relative}</span>
               </div>
               {jobs.map((job) => (
@@ -174,6 +175,7 @@ export default async function TimelinePage() {
         <section className="day">
           <div className="day-head">
             <span className="dow">Date TBC</span>
+            <span className="rule" />
             <span className="relative">{undated.length} job(s)</span>
           </div>
           {undated.map((job) => (

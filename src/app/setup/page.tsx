@@ -88,7 +88,7 @@ export default async function SetupPage() {
 
       <section style={{ marginTop: 34 }}>
         <h2>What your account owner needs to do</h2>
-        <p style={{ color: 'var(--ink-soft)', maxWidth: '64ch' }}>
+        <p className="prose">
           Only the Google step genuinely requires the account owner, and it is a single sign-in
           screen. The rest are keys that any admin can copy out of each product. The full
           step-by-step list, written for a non-technical reader, is in{' '}
@@ -98,7 +98,7 @@ export default async function SetupPage() {
 
       <section style={{ marginTop: 26 }}>
         <h2>One habit that makes this much more reliable</h2>
-        <p style={{ color: 'var(--ink-soft)', maxWidth: '64ch' }}>
+        <p className="prose">
           These five systems share no common ID, so Rock Factory Central matches jobs by client
           name, email and date. That works well, but it is guesswork at the edges. If the team puts
           the same job number — for example <strong>RF-1042</strong> — in the On Rent quote, the

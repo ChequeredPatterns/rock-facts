@@ -1,7 +1,7 @@
 import {
   confirmedCrewCount,
   crewShortfall,
-  formatEventTime,
+  eventTimeParts,
   formatMoney,
   JOB_STATUS_LABELS,
   SYSTEM_LABELS,
@@ -24,8 +24,10 @@ function statusChipClass(job: Job): string {
   switch (job.status) {
     case 'accepted':
       return 'chip ok';
+    case 'quoted':
+    case 'new_enquiry':
+      return 'chip accent';
     case 'not_accepted':
-      return 'chip ghost';
     case 'completed':
       return 'chip ghost';
     case 'unknown':
@@ -43,14 +45,18 @@ function statusChipClass(job: Job): string {
 export function JobRow({ job }: { job: Job }) {
   const shortfall = crewShortfall(job);
   const confirmed = confirmedCrewCount(job);
+  const { start, end } = eventTimeParts(job);
 
   return (
     <article className="job">
-      <div className="job-time">{formatEventTime(job)}</div>
+      <div className="job-time">
+        <span className="t-start">{start}</span>
+        {end ? <span className="t-end">{end}</span> : null}
+      </div>
 
       <div className="job-main">
         <h3>
-          {job.ref ? <span style={{ color: 'var(--ink-faint)' }}>{job.ref} </span> : null}
+          {job.ref ? <span className="job-ref">{job.ref}</span> : null}
           {job.clientName}
         </h3>
 
@@ -59,7 +65,7 @@ export function JobRow({ job }: { job: Job }) {
           {job.clientEmail ? <span>{job.clientEmail}</span> : null}
         </div>
 
-        <div className="job-meta" style={{ marginTop: 7 }}>
+        <div className="job-chips">
           <span className={statusChipClass(job)}>{JOB_STATUS_LABELS[job.status]}</span>
 
           {/* Order matters. A green chip must never be able to show zero —
