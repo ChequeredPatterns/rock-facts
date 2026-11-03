@@ -133,6 +133,62 @@ body::after {
   gap: 16px;
 }
 
+/* --- Wordmark --------------------------------------------------------------
+ * Real artwork from /public. The company logo is black-on-white, so it is
+ * inverted for the dark interface. `screen` then drops the inverted white
+ * background to nothing, so a logo file WITH a white background and one with
+ * transparency both render correctly as white lettering on the dark panel.
+ */
+.logo-img {
+  display: block;
+  width: auto;
+  filter: invert(1);
+  mix-blend-mode: screen;
+}
+
+/* Typeset fallback, used only while no logo file exists in /public. */
+.logo-type {
+  display: inline-flex;
+  flex-direction: column;
+  font-family: 'Anton', 'Haettenschweiler', 'Arial Narrow', sans-serif;
+  font-weight: 400;
+  text-transform: uppercase;
+  line-height: 0.83;
+  letter-spacing: -0.012em;
+  color: var(--text);
+  text-shadow: 0 0 30px rgba(61, 219, 245, 0.3);
+}
+
+.logo-row {
+  display: flex;
+  align-items: stretch;
+  gap: 0.14em;
+}
+
+.logo-big {
+  font-size: 1.62em;
+}
+
+/* Vertical "THE", reading bottom-to-top, flush against the R of ROCK. */
+.logo-the {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  font-size: 0.74em;
+  letter-spacing: 0.02em;
+  display: flex;
+  align-items: center;
+  color: var(--cyan);
+}
+
+/* Vertical "net", reading top-to-bottom, tucked after FACTORY. */
+.logo-net {
+  writing-mode: vertical-rl;
+  font-size: 0.58em;
+  letter-spacing: 0.02em;
+  align-self: flex-end;
+  color: var(--cyan);
+}
+
 .brand-divider {
   width: 1px;
   height: 38px;

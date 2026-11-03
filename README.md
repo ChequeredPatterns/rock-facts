@@ -151,8 +151,19 @@ on screen always indicates something that needs doing.
 Type is Chakra Petch for display, Inter for body, and JetBrains Mono for all
 figures and times, so numbers align in columns.
 
-The wordmark is rendered in CSS (`src/components/Wordmark.tsx`) so it stays
-crisp at any size and sits correctly on the dark background. The supplied logo
-artwork is solid black and would be invisible here; to use a real file instead,
-save a **white** version at `public/logo.png` and follow the two-line note in
-that component.
+### The logo
+
+**To use the real company artwork, drop the file into `public/` as
+`logo.png`** (or `.svg`, `.webp`, `.jpg`). It is detected automatically and
+replaces the typeset wordmark — no code change.
+
+The supplied artwork is black-on-white, which would be invisible on a dark
+interface, so `.logo-img` in `globals.css` inverts it and uses a `screen`
+blend. That combination handles both a file with an opaque white background
+and one with transparency; both have been tested and render as clean white
+lettering with no visible box.
+
+Until that file is added, `src/components/Wordmark.tsx` reproduces the mark in
+CSS using Anton — a heavy condensed grotesque close to the original lettering
+— laid out in the same structure: vertical "THE" beside a large "ROCK", over
+"FACTORY." with a vertical "net".

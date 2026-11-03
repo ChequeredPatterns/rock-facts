@@ -1,61 +1,65 @@
 /**
  * The Rock Factory wordmark.
  *
- * Rendered in CSS rather than as an image file so it stays crisp at any size
- * and sits correctly on the dark interface. The supplied logo artwork is
- * solid black, which would be invisible here; this version carries the same
- * stacked, heavy-condensed structure in the interface's own palette.
+ * TWO MODES, chosen automatically at render time:
  *
- * TO USE THE REAL LOGO FILE INSTEAD:
- *   1. Save a WHITE version of the logo as `public/logo.png` (or .svg).
- *   2. Replace the returned markup below with:
- *        <img src="/logo.png" alt="The Rock Factory" style={{ height: 42 }} />
- *   Nothing else in the app needs to change.
+ * 1. REAL ARTWORK (preferred). Drop the company logo file into `public/` as
+ *    `logo.png`, `logo.svg`, `logo.jpg` or `logo.webp` and it is picked up
+ *    automatically — no code change. The original artwork is black-on-white,
+ *    so it is inverted for the dark interface (see `.logo-img` in globals.css).
+ *
+ * 2. TYPESET FALLBACK. Until that file exists, the wordmark is reproduced in
+ *    CSS using Anton — a heavy condensed grotesque very close to the original
+ *    lettering — laid out in the same structure as the real mark: a vertical
+ *    "THE" beside a large "ROCK", over "FACTORY." with a vertical "net".
+ *
+ * The detection runs on the server (this is a server component), so it costs
+ * nothing at request time beyond a cached filesystem check.
  */
 
+import fs from 'node:fs';
+import path from 'node:path';
+
+/** Checked in order; the first that exists wins. */
+const CANDIDATES = ['logo.svg', 'logo.png', 'logo.webp', 'logo.jpg', 'logo.jpeg'];
+
+/** Resolved once per server process rather than on every render. */
+let resolved: string | null | undefined;
+
+function findLogoFile(): string | null {
+  if (resolved !== undefined) return resolved;
+  try {
+    const publicDir = path.join(process.cwd(), 'public');
+    resolved = CANDIDATES.find((f) => fs.existsSync(path.join(publicDir, f))) ?? null;
+  } catch {
+    resolved = null;
+  }
+  return resolved;
+}
+
 export function Wordmark({ size = 17 }: { size?: number }) {
+  const file = findLogoFile();
+
+  if (file) {
+    return (
+      <img
+        src={`/${file}`}
+        alt="The Rock Factory"
+        className="logo-img"
+        style={{ height: size * 2.9 }}
+      />
+    );
+  }
+
   return (
-    <span
-      aria-label="The Rock Factory"
-      style={{
-        fontFamily: 'var(--font-display)',
-        fontWeight: 700,
-        textTransform: 'uppercase',
-        lineHeight: 0.86,
-        letterSpacing: '-0.01em',
-        fontSize: size,
-        display: 'inline-block',
-        color: 'var(--text)',
-        textShadow: '0 0 26px rgba(61, 219, 245, 0.35)',
-      }}
-    >
-      <span
-        aria-hidden="true"
-        style={{
-          display: 'block',
-          fontSize: '0.56em',
-          letterSpacing: '0.34em',
-          color: 'var(--cyan)',
-        }}
-      >
-        The
+    <span className="logo-type" style={{ fontSize: size }} aria-label="The Rock Factory">
+      <span className="logo-row" aria-hidden="true">
+        <span className="logo-the">The</span>
+        <span className="logo-big">Rock</span>
       </span>
-      <span aria-hidden="true" style={{ display: 'block', fontSize: '1.45em' }}>
-        Rock
-      </span>
-      <span aria-hidden="true" style={{ display: 'block', fontSize: '1.45em' }}>
-        Factory
-        <span
-          style={{
-            fontSize: '0.4em',
-            letterSpacing: '0.1em',
-            color: 'var(--cyan)',
-            verticalAlign: 'super',
-            marginLeft: '0.12em',
-          }}
-        >
-          .net
-        </span>
+      <span className="logo-row" aria-hidden="true">
+        <span className="logo-big">Factory.</span>
+        <span className="logo-net">net</span>
       </span>
     </span>
   );
