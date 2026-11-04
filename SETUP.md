@@ -21,13 +21,14 @@ business tool. No credit card is needed.
 5. Click **Deploy**.
 
 After a couple of minutes you get an address like
-`https://something-random.netlify.app`.
+`https://something-random.netlify.app`. To make it tidier:
+**Site configuration → Change site name**.
 
-To make it tidier: **Site configuration → Change site name** and set it to
-something like `rock-factory-central`, giving you
-`https://rock-factory-central.netlify.app`.
-
-**Write that address down** — the next part needs it.
+> **This is already done.** The site is live at
+> <https://therockfactorycentral.netlify.app> — every address below is written
+> out in full for it, so there is nothing to substitute. If the site is ever
+> renamed, the addresses in Part 1 step 5 must be updated in Google Cloud
+> Console to match, or the sign-in will break.
 
 Open it now. The dashboard works immediately on clearly-labelled sample data,
 so you have something real to show people before any keys exist.
@@ -68,11 +69,13 @@ thing that makes someone hesitate.
      Part 0 with `/api/auth/google/callback` on the end, exactly like this:
 
      ```
-     https://your-site.netlify.app/api/auth/google/callback
+     https://therockfactorycentral.netlify.app/api/auth/google/callback
      ```
 
-     It must match exactly — `https`, no trailing slash. A mismatch here is the
-     single most common failure, and the app will tell you if it happens.
+     Copy that line exactly as it is — it is already filled in for this site.
+     It must match character for character: `https`, no trailing slash, no
+     `www`. A mismatch here is the single most common failure, and the app
+     will tell you if it happens.
 6. Click **Create**. Copy the **Client ID** and **Client secret**.
 
 ### Steps 7–8: save them
@@ -84,7 +87,7 @@ thing that makes someone hesitate.
 
 ### Steps 9–11: the sign-in (30 seconds, needs the account owner)
 
-9. Visit `https://your-site.netlify.app/setup` and click
+9. Visit <https://therockfactorycentral.netlify.app/setup> and click
    **Sign in with Google**.
 10. Sign in **as the account holding the business calendars** and approve.
 11. The page shows a **refresh token**. Add it on Netlify as
