@@ -180,3 +180,7 @@ main().catch((e) => {
   console.error('Verifier failed:', e instanceof Error ? e.message : e);
   process.exit(1);
 });
+
+// Marks this file as a module so its top-level names are scoped to it,
+// rather than colliding with the other verifier script.
+export {};

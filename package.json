@@ -9,7 +9,8 @@
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test test/*.test.ts",
     "verify": "npx tsc --noEmit && node --import tsx --test test/*.test.ts",
-    "verify:connecteam": "node --import tsx scripts/verify-connecteam.ts"
+    "verify:connecteam": "node --import tsx scripts/verify-connecteam.ts",
+    "verify:onrent": "node --import tsx scripts/verify-onrent.ts"
   },
   "dependencies": {
     "next": "15.5.4",
