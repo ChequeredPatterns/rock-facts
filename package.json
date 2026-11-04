@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test test/*.test.ts",
     "verify": "npx tsc --noEmit && node --import tsx --test test/*.test.ts",
+    "verify:streak": "node --import tsx scripts/verify-streak.ts",
     "verify:connecteam": "node --import tsx scripts/verify-connecteam.ts",
     "verify:onrent": "node --import tsx scripts/verify-onrent.ts"
   },

@@ -2,18 +2,24 @@
  * Streak connector — pipeline status for each client.
  *
  * ┌─────────────────────────────────────────────────────────────────────────┐
- * │ SPEC STATUS: NOT VERIFIED.                                              │
+ * │ SPEC STATUS: VERIFIED against the live API on 2026-11-04.               │
  * │                                                                         │
- * │ The build environment's network policy blocked streak.readme.io, so the │
- * │ request details below could not be checked against Streak's own docs.   │
- * │ They follow the widely-reported shape of the Streak v1 API (HTTP Basic  │
- * │ auth, API key as username, empty password) but MUST be confirmed.       │
+ * │ Verified with a real API key against the live account, and against      │
+ * │ Streak's own docs at streak.readme.io/docs/authentication:              │
+ * │   • Auth — HTTP Basic, API key as the username, empty password.         │
+ * │   • Base URL — https://api.streak.com/api/v1 (the documented host).     │
+ * │   • All five endpoints below exist and return 200.                       │
+ * │   • Timestamps are epoch MILLISECONDS.                                   │
+ * │   • /stages returns an OBJECT keyed by stage key, not an array.          │
+ * │   • Every box field read below is present on live boxes.                 │
+ * │   • The stage map covers all 15 real stages of the Event Planning        │
+ * │     pipeline (see STAGE_RULES).                                          │
  * │                                                                         │
- * │ Everything needing verification is in the API_SPEC block below. If the  │
- * │ real API differs, correcting that block is the whole fix — no other     │
- * │ file in this project needs to change.                                   │
+ * │ STILL UNVERIFIED (one item): the box deep-link format used for `url`.   │
+ * │ Streak documents no permalink, and no URL is returned in the payload.   │
+ * │ See BOX_URL below.                                                      │
  * │                                                                         │
- * │ Verify with:  npm run verify:streak                                     │
+ * │ Re-check at any time with:  npm run verify:streak                       │
  * └─────────────────────────────────────────────────────────────────────────┘
  */
 
@@ -21,10 +27,12 @@ import type { JobStatus } from '../domain';
 import { extractRef } from '../matcher';
 import type { PartialJob } from '../matcher';
 
-/** ⚠ UNVERIFIED — check every value here against Streak's live API docs. */
+/** Verified against the live API and Streak's authentication docs. */
 export const API_SPEC = {
-  baseUrl: 'https://www.streak.com/api/v1',
-  /** Streak is reported to use HTTP Basic with the API key as the username. */
+  /** Documented host. `www.streak.com` also answers, but is not documented. */
+  baseUrl: 'https://api.streak.com/api/v1',
+  /** Documented: "set the username of the request to the API key. We do not
+   *  require a password." */
   auth: (apiKey: string) => ({
     Authorization: `Basic ${Buffer.from(`${apiKey}:`).toString('base64')}`,
   }),
@@ -35,10 +43,45 @@ export const API_SPEC = {
     boxes: (pipelineKey: string) => `/pipelines/${pipelineKey}/boxes`,
     stages: (pipelineKey: string) => `/pipelines/${pipelineKey}/stages`,
   },
+  /**
+   * Query parameters on the boxes endpoint. Streak does not document a
+   * "list boxes in a pipeline" page at all, so these were established
+   * empirically against the live account and confirmed to work:
+   *   • `limit=N`        returns exactly N boxes.
+   *   • `sortBy=<field>` sorts descending; with `lastUpdatedTimestamp` the
+   *                      first result matched the maximum across all 6,180
+   *                      boxes, so it really is newest-first.
+   * Because they are undocumented they could change without notice, so the
+   * result is also bounded client-side in fetchStreakJobs.
+   */
+  boxQuery: { limitParam: 'limit', sortParam: 'sortBy', sortField: 'lastUpdatedTimestamp' },
 } as const;
 
-/** Streak box as far as we rely on it. Fields are optional throughout
- *  because we cannot confirm which are guaranteed. */
+/**
+ * ⚠ UNVERIFIED. Streak documents no box permalink and returns no URL in the
+ * box payload, so this is the widely-used community format rather than a
+ * confirmed one. If staff report dead links, this single line is the fix.
+ */
+const BOX_URL = (boxKey: string) => `https://mail.google.com/mail/u/0/#box/${boxKey}`;
+
+/**
+ * How many boxes to pull per refresh, newest activity first.
+ *
+ * This matters a great deal: the live pipeline holds 6,180 boxes and the
+ * unbounded response is ~63 MB of JSON, which is far too much to fetch and
+ * parse on a dashboard load (and well past a serverless function's comfort).
+ * The dashboard only ever shows current work, so the most recently touched
+ * boxes are the ones worth having. Raise STREAK_BOX_LIMIT if jobs go missing.
+ */
+const DEFAULT_BOX_LIMIT = 400;
+
+function boxLimit(): number {
+  const raw = Number(process.env.STREAK_BOX_LIMIT);
+  if (!Number.isFinite(raw) || raw <= 0) return DEFAULT_BOX_LIMIT;
+  return Math.floor(raw);
+}
+
+/** Streak box, restricted to the fields verified present on live boxes. */
 interface StreakBox {
   boxKey?: string;
   key?: string;
@@ -46,6 +89,8 @@ interface StreakBox {
   stageKey?: string;
   creationTimestamp?: number;
   lastUpdatedTimestamp?: number;
+  /** Streak's own "last activity of any kind" stamp. Present on most boxes. */
+  lastTouchpointTimestamp?: number;
   lastEmailReceivedTimestamp?: number;
   lastEmailSentTimestamp?: number;
   notes?: string;
@@ -60,29 +105,115 @@ interface StreakStage {
 }
 
 /**
- * Map a Streak stage NAME to our canonical status.
+ * Stage name → canonical status, in priority order.
  *
  * Matching on the name rather than the stage key is deliberate: stage keys are
  * opaque per-pipeline strings, whereas the names are the words the business
- * already uses ("new enquiries", "quoted", "completed job"). If the team
- * renames a stage, add the new wording here.
+ * already uses. Each rule below is annotated with the real stage it was
+ * written for; the generic patterns at the end catch stages added or renamed
+ * later.
+ *
+ * ORDER IS LOAD-BEARING. Two live stages are only classified correctly
+ * because of where their rule sits:
+ *   • "Quoted (gets added to calendar as unconfirmed)" must be tested for
+ *     "quoted" before anything matches on "confirmed" — hence \bconfirmed\b,
+ *     which deliberately does NOT match inside "unconfirmed".
+ *   • "Not Booked, Lost Job or Cancelled" must be tested before "booked".
+ */
+export const STAGE_RULES: readonly { pattern: RegExp; status: JobStatus; stage: string }[] = [
+  // --- Dead, excluded or never-a-job -------------------------------------
+  {
+    pattern: /not\s*booked|not\s*accept|declin|\blost\b|\bdead\b|cancel/,
+    status: 'not_accepted',
+    stage: 'Not Booked, Lost Job or Cancelled - removed from cal',
+  },
+  {
+    pattern: /blacklist|bounced|invalid|unsubscrib|\bspam\b/,
+    status: 'not_accepted',
+    stage: 'BLACKLISTED / BOUNCED, INVALID, UNSUBSCRIBED',
+  },
+  {
+    pattern: /not\s*(an?\s*)?events?\b/,
+    status: 'not_accepted',
+    stage: 'NOT EVENTS',
+  },
+  {
+    // An accounts contact rather than the person booking a job.
+    pattern: /accounts\s*payable|not\s*the\s*event\s*organiser/,
+    status: 'not_accepted',
+    stage: 'Accounts Payable, Invoicing - Not the event organiser',
+  },
+  {
+    // Nurture lists, not live jobs. `not_accepted` is what keeps them off the
+    // live board (it is the only status outside OPEN_STATUSES that fits). If
+    // the team wants these visible for follow-up, change these two to
+    // 'question' — nothing else needs to change.
+    pattern: /relationship\s*building|old\s*clients/,
+    status: 'not_accepted',
+    stage: 'RELATIONSHIP BUILDING / OLD CLIENTS TRYING TO CONTACT',
+  },
+
+  // --- Finished -----------------------------------------------------------
+  {
+    pattern: /complet|previous\s*job|past\s*client|\bdone\b|finish/,
+    status: 'completed',
+    stage: 'Completed jobs / Previous Jobs / Past Clients',
+  },
+
+  // --- Committed and in progress -----------------------------------------
+  {
+    // Gear is out, or the job is done but unpaid: committed, and still needs
+    // chasing, so it must stay on the live board.
+    pattern: /^out\b|\bout\s*\(|awaiting\s*return|awaiting\s*payment/,
+    status: 'accepted',
+    stage: 'OUT (Awaiting Return) OR Awaiting payment still',
+  },
+  {
+    // \bconfirmed\b will not match "unconfirmed" — that is the whole point.
+    pattern: /accept|\bconfirmed\b|\bwon\b|\bbooked\b/,
+    status: 'accepted',
+    stage: 'Accepted - PREPARATION (Gets added to Cal as confirmed)',
+  },
+
+  // --- Quoting ------------------------------------------------------------
+  {
+    pattern: /quot|\bwip|proposal|estimate/,
+    status: 'quoted',
+    stage: 'Quoted / QUOTING & WIPS',
+  },
+
+  // --- Live but waiting on someone ---------------------------------------
+  {
+    pattern: /question|more\s*info|follow\s*up|limbo|postpon|awaiting|pending|\binfo\b/,
+    status: 'question',
+    stage: 'Questions, More info needed, Follow up, Limbo... / POSTPONED',
+  },
+
+  // --- New ----------------------------------------------------------------
+  {
+    pattern: /new\s*enquir|new\s*inquir|make\s*contact|enquir|inquir|\blead\b/,
+    status: 'new_enquiry',
+    stage: 'New Enquiries - MAKE CONTACT',
+  },
+];
+
+/**
+ * Map a Streak stage NAME to our canonical status.
+ *
+ * Returns 'unknown' only for a stage this map has never seen. Note that
+ * 'unknown' is labelled "Not in pipeline" in the UI, so a box sitting in a
+ * real stage should never land there — if it does, add a rule above.
  */
 export function mapStageToStatus(stageName: string | undefined): JobStatus {
   if (!stageName) return 'unknown';
   const s = stageName.toLowerCase().trim();
-
-  // Order matters: check the more specific phrases first. "job not accepted"
-  // contains "accepted", so it has to be tested before the accepted rule.
-  if (/not\s*accept|declin|lost|dead|cancel/.test(s)) return 'not_accepted';
-  if (/complet|done|finish|invoiced|paid/.test(s)) return 'completed';
-  if (/accept|confirm|won|booked/.test(s)) return 'accepted';
-  if (/quot|proposal|estimate/.test(s)) return 'quoted';
-  if (/question|follow|awaiting|pending|info/.test(s)) return 'question';
-  if (/new|enquir|inquir|lead/.test(s)) return 'new_enquiry';
+  for (const rule of STAGE_RULES) {
+    if (rule.pattern.test(s)) return rule.status;
+  }
   return 'unknown';
 }
 
-/** Streak timestamps are reported as epoch milliseconds. */
+/** Streak timestamps are epoch milliseconds (verified on live boxes). */
 function toIso(ts: number | undefined): string | undefined {
   if (!ts || !Number.isFinite(ts)) return undefined;
   // Guard against seconds-vs-milliseconds ambiguity: anything below this is
@@ -132,7 +263,19 @@ export async function listPipelines(): Promise<{ key: string; name: string }[]> 
     .filter((p) => p.key);
 }
 
-/** Fetch every box in the configured pipeline, mapped to PartialJobs. */
+/** Normalise the stages response to a stageKey → name lookup.
+ *  Live API returns an object keyed by stage key; an array is tolerated too. */
+function stageNameLookup(stages: StreakStage[] | Record<string, StreakStage>): Map<string, string> {
+  const names = new Map<string, string>();
+  if (Array.isArray(stages)) {
+    for (const st of stages) if (st.key) names.set(st.key, st.name ?? '');
+  } else if (stages && typeof stages === 'object') {
+    for (const [key, val] of Object.entries(stages)) names.set(key, val?.name ?? '');
+  }
+  return names;
+}
+
+/** Fetch the most recently active boxes in the configured pipeline. */
 export async function fetchStreakJobs(): Promise<PartialJob[]> {
   const pipelineKey = process.env.STREAK_PIPELINE_KEY;
   if (!pipelineKey) {
@@ -141,31 +284,33 @@ export async function fetchStreakJobs(): Promise<PartialJob[]> {
     );
   }
 
-  const [boxes, stages] = await Promise.all([
-    streakGet<StreakBox[]>(API_SPEC.endpoints.boxes(pipelineKey)),
-    streakGet<StreakStage[]>(API_SPEC.endpoints.stages(pipelineKey)).catch(
-      () => [] as StreakStage[],
-    ),
+  const limit = boxLimit();
+  const { limitParam, sortParam, sortField } = API_SPEC.boxQuery;
+  const boxesPath =
+    `${API_SPEC.endpoints.boxes(pipelineKey)}` +
+    `?${sortParam}=${sortField}&${limitParam}=${limit}`;
+
+  const [boxesRaw, stages] = await Promise.all([
+    streakGet<StreakBox[]>(boxesPath),
+    streakGet<StreakStage[] | Record<string, StreakStage>>(
+      API_SPEC.endpoints.stages(pipelineKey),
+    ).catch(() => [] as StreakStage[]),
   ]);
 
-  // Streak returns stages as either an array or a key-mapped object depending
-  // on the endpoint; normalise to a key→name lookup either way.
-  const stageNames = new Map<string, string>();
-  if (Array.isArray(stages)) {
-    for (const st of stages) if (st.key) stageNames.set(st.key, st.name ?? '');
-  } else if (stages && typeof stages === 'object') {
-    for (const [key, val] of Object.entries(stages as Record<string, StreakStage>)) {
-      stageNames.set(key, val?.name ?? '');
-    }
-  }
+  // Belt and braces: `limit` is undocumented, so if Streak ever stops
+  // honouring it we still only process the first `limit` boxes.
+  const boxes = (Array.isArray(boxesRaw) ? boxesRaw : []).slice(0, limit);
+  const stageNames = stageNameLookup(stages);
 
   return boxes.map((box) => {
     const id = box.boxKey ?? box.key ?? '';
     const stageName = box.stageKey ? stageNames.get(box.stageKey) : undefined;
 
-    // Last activity is the most recent of the box's own timestamps. A client
-    // reply matters more than an internal edit, but either counts as activity.
+    // Last activity is the most recent of the box's own timestamps. Streak's
+    // own lastTouchpointTimestamp already accounts for calls and meetings, so
+    // it leads; the email stamps cover boxes that have no touchpoint recorded.
     const activity = [
+      toIso(box.lastTouchpointTimestamp),
       toIso(box.lastUpdatedTimestamp),
       toIso(box.lastEmailReceivedTimestamp),
       toIso(box.lastEmailSentTimestamp),
@@ -175,7 +320,7 @@ export async function fetchStreakJobs(): Promise<PartialJob[]> {
     return {
       system: 'streak',
       externalId: id,
-      url: id ? `https://mail.google.com/mail/u/0/#box/${id}` : undefined,
+      url: id ? BOX_URL(id) : undefined,
       lastActivityAt: activity.sort().reverse()[0],
       ref: extractRef(box.name) ?? extractRef(box.notes),
       clientName: box.name?.replace(/\bRF[-\s]?\d{3,}\b/i, '').trim() || 'Unnamed box',
