@@ -137,31 +137,45 @@ which value to use for `STREAK_PIPELINE_KEY`.
 
 ---
 
-## Part 4 — On Rent Events (unknown — needs one email)
+## Part 4 — On Rent Events (5 minutes)
 
-This one could not be finished during the build, and it is worth being straight
-about why: the build environment could not reach On Rent Events' website, so
-there was no way to confirm how their API works. Rather than guess and have it
-fail confusingly later, the connector is built but deliberately switched off.
+On Rent Events runs on **Current RMS**, so this uses the documented Current
+RMS API. You need two things.
 
-**Send On Rent Events support this email:**
+### The subdomain
 
-> Hi,
->
-> We're building an internal dashboard and would like to pull our quote data
-> out of On Rent Events automatically. Could you point us at your API
-> documentation, and confirm:
->
-> 1. The API base URL for our account
-> 2. How we authenticate (API key? Which header?)
-> 3. The endpoint that lists quotes/bookings, and how to filter it by date
-> 4. Which fields hold the client name, client email, event date, total value
->    and quote status
->
-> Thanks!
+Look at the web address when you are signed in to On Rent Events / Current
+RMS. If it reads `https://rockfactory.current-rms.com`, your subdomain is
+`rockfactory` — just that first part, not the whole address.
 
-When they reply, pass the answer on and this connector becomes about twenty
-minutes of work. Everything else is already built around it.
+That is `ONRENT_SUBDOMAIN`.
+
+### The API key
+
+1. In Current RMS, go to **System Setup** → **Integrations** → **API**.
+2. Generate a key and copy it.
+
+That is `ONRENT_API_KEY`.
+
+> ⚠️ **This key is more powerful than the others.** Current RMS API keys
+> cannot be restricted to read-only — the key grants full read *and write*
+> access to your rental system. Rock Factory Central only ever reads, and
+> never sends a write request, but the key itself could do damage if it
+> leaked. Keep it in the hosting platform's environment variables and nowhere
+> else: not in a file, not in an email, not in a chat message.
+
+### Checking it works
+
+Once both values are saved, the Setup page will show On Rent Events as
+connected. If anything is wrong, this reports exactly what:
+
+```bash
+npm run verify:onrent
+```
+
+It also lists the opportunity status names your business actually uses, which
+is worth passing on — the dashboard has to translate those into its own
+pipeline stages, and every company words them differently.
 
 ---
 

@@ -1,26 +1,24 @@
 /**
  * On Rent Events connector — quotes and their values.
  *
+ * On Rent Events runs on **Current RMS**, so this targets the documented
+ * Current RMS API rather than guessing at a bespoke one.
+ *
  * ┌─────────────────────────────────────────────────────────────────────────┐
- * │ SPEC STATUS: UNKNOWN — the least certain connector in this project.     │
+ * │ SPEC STATUS: likely correct, NOT YET CONFIRMED against the live API.    │
  * │                                                                         │
- * │ onrentevents.com was unreachable from the build environment. Search     │
- * │ indicated the vendor's help centre advertises "an open API" for pulling │
- * │ data out of your account, but NONE of the following could be            │
- * │ established: base URL, authentication scheme, endpoint paths, response  │
- * │ shapes, or rate limits.                                                 │
+ * │ api.current-rms.com is blocked by this build environment's network      │
+ * │ policy, so the details below come from secondary sources rather than    │
+ * │ Current RMS's own documentation at https://api.current-rms.com/doc.     │
  * │                                                                         │
- * │ Rather than invent an API and have it fail confusingly in production,   │
- * │ this connector refuses to run until `ONRENT_API_BASE` is set, and       │
- * │ reports clearly on the setup page that it needs configuring.            │
+ * │ Confirm with:  npm run verify:onrent                                    │
  * │                                                                         │
- * │ TO FINISH THIS CONNECTOR you need, from On Rent Events support:         │
- * │   • The API base URL (likely tenant-specific, e.g. {company}.onrent...) │
- * │   • How to authenticate (API key header? bearer token? Which header?)   │
- * │   • The endpoint listing quotes/opportunities, with its date filter     │
- * │   • Which response fields carry: client name, client email, event date, │
- * │     quote total, and quote status                                       │
- * │ Send those to this project and the mapping below becomes a 20-line job. │
+ * │ KNOWN RISK — API VERSION. A v2.1 of the Opportunities API was reported  │
+ * │ released in June 2026, keeping the same URL and query parameters but    │
+ * │ changing the response shape, and no longer returning line items or      │
+ * │ participants on the list endpoint. Which version an account receives is │
+ * │ unconfirmed, so every field below is read defensively and the connector │
+ * │ tolerates either shape rather than assuming one.                        │
  * └─────────────────────────────────────────────────────────────────────────┘
  */
 
@@ -28,50 +26,78 @@ import type { JobStatus } from '../domain';
 import { extractRef } from '../matcher';
 import type { PartialJob } from '../matcher';
 
+/** ⚠ Verify against https://api.current-rms.com/doc when reachable. */
+export const API_SPEC = {
+  baseUrl: 'https://api.current-rms.com/api/v1',
+  /**
+   * Current RMS identifies the account by subdomain and authenticates with a
+   * token, both sent as headers. The key is generated in Current RMS under
+   * System Setup → Integrations → API.
+   *
+   * NOTE: a Current RMS API key grants full READ AND WRITE access to the
+   * system — it cannot be scoped to read-only. This connector only ever
+   * issues GET requests, but the key itself is powerful, so it belongs in an
+   * environment secret and nowhere else.
+   */
+  auth: (subdomain: string, token: string) => ({
+    'X-SUBDOMAIN': subdomain,
+    'X-AUTH-TOKEN': token,
+  }),
+  endpoints: {
+    opportunities: '/opportunities',
+    members: '/members',
+  },
+  /** Current RMS uses Ransack-style filters, e.g. q[starts_at_gteq]. */
+  filters: {
+    startsAfter: 'q[starts_at_gteq]',
+    startsBefore: 'q[starts_at_lteq]',
+  },
+  pagination: { page: 'page', perPage: 'per_page', maxPerPage: 100 },
+} as const;
+
 export const SPEC_CONFIRMED = false;
 
 /**
- * Field mapping from an On Rent quote object to our model. Expressed as
- * configurable paths so the connector can be pointed at the real response
- * shape without rewriting the fetch logic — set these once the real payload
- * is known.
+ * Map a Current RMS opportunity status to our pipeline status.
+ *
+ * Matched on the status NAME rather than its numeric code: the codes are
+ * undocumented here and differ between API versions, whereas the names are
+ * stable and human-meaningful. Order matters — "not accepted" contains
+ * "accepted", so the negative cases are tested first.
  */
-export const FIELD_MAP = {
-  id: ['id', 'quote_id', 'number'],
-  ref: ['number', 'quote_number', 'reference'],
-  clientName: ['customer_name', 'client_name', 'customer.name', 'client.name'],
-  clientEmail: ['customer_email', 'client_email', 'customer.email', 'client.email'],
-  clientPhone: ['customer_phone', 'client_phone', 'customer.phone'],
-  eventStart: ['event_start', 'start_date', 'delivery_date', 'starts_at'],
-  eventEnd: ['event_end', 'end_date', 'return_date', 'ends_at'],
-  venue: ['venue', 'delivery_address', 'location', 'site_address'],
-  total: ['total', 'grand_total', 'total_inc_tax', 'amount'],
-  status: ['status', 'state', 'stage'],
-} as const;
-
-/** Read a dotted path out of an unknown object, safely. */
-function readPath(obj: unknown, path: string): unknown {
-  return path.split('.').reduce<unknown>((acc, key) => {
-    if (acc && typeof acc === 'object' && key in (acc as Record<string, unknown>)) {
-      return (acc as Record<string, unknown>)[key];
-    }
-    return undefined;
-  }, obj);
-}
-
-/** Try each candidate path in order, returning the first value present. */
-function firstOf(obj: unknown, paths: readonly string[]): unknown {
-  for (const p of paths) {
-    const v = readPath(obj, p);
-    if (v !== undefined && v !== null && v !== '') return v;
-  }
+export function mapOnRentStatus(raw: string | undefined): JobStatus | undefined {
+  if (!raw) return undefined;
+  const s = raw.toLowerCase().trim();
+  if (/dead|lost|reject|declin|cancel|void|not\s*accept/.test(s)) return 'not_accepted';
+  if (/complet|closed|returned|invoiced|checked\s*in/.test(s)) return 'completed';
+  if (/order|reserv|confirm|accept|won|issued|active/.test(s)) return 'accepted';
+  if (/quot|provisional|proposal|estimate|pending|draft/.test(s)) return 'quoted';
+  if (/enquir|inquir|lead|new/.test(s)) return 'new_enquiry';
   return undefined;
 }
 
-function asString(v: unknown): string | undefined {
-  if (typeof v === 'string') return v;
-  if (typeof v === 'number') return String(v);
-  return undefined;
+/** A Current RMS opportunity, with every field optional — see version risk. */
+interface Opportunity {
+  id?: number | string;
+  subject?: string;
+  number?: number | string;
+  description?: string;
+  status?: string | number;
+  status_name?: string;
+  state?: string | number;
+  state_name?: string;
+  starts_at?: string;
+  ends_at?: string;
+  deliver_starts_at?: string;
+  collect_ends_at?: string;
+  charge_total?: string | number;
+  charge_total_with_tax?: string | number;
+  updated_at?: string;
+  created_at?: string;
+  member?: { id?: number | string; name?: string; email?: string; phone?: string };
+  billing_address?: { name?: string; street?: string; city?: string };
+  venue?: { name?: string; address?: { street?: string; city?: string } };
+  destination?: { name?: string };
 }
 
 function asNumber(v: unknown): number | undefined {
@@ -84,89 +110,144 @@ function asNumber(v: unknown): number | undefined {
 }
 
 function asIso(v: unknown): string | undefined {
-  const s = asString(v);
-  if (!s) return undefined;
-  const d = new Date(s);
+  if (typeof v !== 'string' || !v) return undefined;
+  const d = new Date(v);
   return Number.isNaN(d.getTime()) ? undefined : d.toISOString();
 }
 
-export function mapOnRentStatus(raw: string | undefined): JobStatus | undefined {
-  if (!raw) return undefined;
-  const s = raw.toLowerCase();
-  if (/reject|declin|lost|cancel|void/.test(s)) return 'not_accepted';
-  if (/complet|returned|closed|invoiced/.test(s)) return 'completed';
-  if (/confirm|accept|booked|order|won/.test(s)) return 'accepted';
-  if (/quot|proposal|estimate|draft|pending/.test(s)) return 'quoted';
+/** Best available status string, whichever shape the response uses. */
+function statusText(o: Opportunity): string | undefined {
+  if (typeof o.status_name === 'string') return o.status_name;
+  if (typeof o.state_name === 'string') return o.state_name;
+  if (typeof o.status === 'string') return o.status;
+  if (typeof o.state === 'string') return o.state;
+  return undefined;
+}
+
+/** Best available venue description. */
+function venueText(o: Opportunity): string | undefined {
+  const v = o.venue;
+  if (v?.name) return v.name;
+  if (v?.address?.street || v?.address?.city) {
+    return [v.address.street, v.address.city].filter(Boolean).join(', ');
+  }
+  if (o.destination?.name) return o.destination.name;
+  const b = o.billing_address;
+  if (b?.street || b?.city) return [b.street, b.city].filter(Boolean).join(', ');
   return undefined;
 }
 
 export class OnRentNotConfiguredError extends Error {
-  constructor() {
+  constructor(missing: string) {
     super(
-      'On Rent Events is not configured. Its API details could not be confirmed during the build — ' +
-        'see src/lib/connectors/onrent.ts for exactly what to request from On Rent Events support.',
+      `On Rent Events is not configured: ${missing} is missing. ` +
+        'On Rent Events runs on Current RMS; the API key comes from ' +
+        'System Setup → Integrations → API, and the subdomain is the first ' +
+        'part of your Current RMS web address.',
     );
     this.name = 'OnRentNotConfiguredError';
   }
 }
 
-export async function fetchOnRentJobs(from: Date, to: Date): Promise<PartialJob[]> {
-  const base = process.env.ONRENT_API_BASE;
-  const apiKey = process.env.ONRENT_API_KEY;
-  const path = process.env.ONRENT_QUOTES_PATH ?? '/quotes';
+async function currentRmsGet(path: string, params: URLSearchParams): Promise<unknown> {
+  const subdomain = process.env.ONRENT_SUBDOMAIN;
+  const token = process.env.ONRENT_API_KEY;
+  if (!subdomain) throw new OnRentNotConfiguredError('ONRENT_SUBDOMAIN');
+  if (!token) throw new OnRentNotConfiguredError('ONRENT_API_KEY');
 
-  // Deliberate hard stop: better an honest "not set up" than a silent wrong answer.
-  if (!base || !apiKey) throw new OnRentNotConfiguredError();
-
-  const authHeader = process.env.ONRENT_AUTH_HEADER ?? 'Authorization';
-  const authValue = process.env.ONRENT_AUTH_PREFIX
-    ? `${process.env.ONRENT_AUTH_PREFIX} ${apiKey}`
-    : `Bearer ${apiKey}`;
-
-  const params = new URLSearchParams({
-    [process.env.ONRENT_FROM_PARAM ?? 'from']: from.toISOString().slice(0, 10),
-    [process.env.ONRENT_TO_PARAM ?? 'to']: to.toISOString().slice(0, 10),
+  const base = process.env.ONRENT_API_BASE?.replace(/\/$/, '') ?? API_SPEC.baseUrl;
+  const res = await fetch(`${base}${path}?${params}`, {
+    headers: { ...API_SPEC.auth(subdomain, token), Accept: 'application/json' },
   });
 
-  const res = await fetch(`${base.replace(/\/$/, '')}${path}?${params}`, {
-    headers: { [authHeader]: authValue, Accept: 'application/json' },
-  });
-
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
+  if (res.status === 401 || res.status === 403) {
     throw new Error(
-      `On Rent Events request failed (${res.status}). The API shape is unconfirmed — ` +
-        `check ONRENT_* settings against the real API. ${body.slice(0, 200)}`,
+      'On Rent Events rejected the credentials. Check the API key is current and ' +
+        'that ONRENT_SUBDOMAIN matches your Current RMS web address.',
     );
   }
+  if (res.status === 429) {
+    throw new Error('On Rent Events rate limit reached. It will recover on its own shortly.');
+  }
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`On Rent Events request failed (${res.status}). ${body.slice(0, 200)}`);
+  }
+  return res.json();
+}
 
-  const json: unknown = await res.json();
-  // Accept either a bare array or a wrapped collection.
-  const rows: unknown[] = Array.isArray(json)
-    ? json
-    : ((json as Record<string, unknown>)?.data as unknown[]) ??
-      ((json as Record<string, unknown>)?.quotes as unknown[]) ??
-      ((json as Record<string, unknown>)?.results as unknown[]) ??
-      [];
+/**
+ * Fetch opportunities overlapping the window, following pagination.
+ *
+ * A page cap is enforced so a misconfigured filter cannot walk an entire
+ * account's history on every dashboard load.
+ */
+export async function fetchOnRentJobs(from: Date, to: Date): Promise<PartialJob[]> {
+  const out: PartialJob[] = [];
+  const MAX_PAGES = 10;
 
-  return rows.map((row, i) => {
-    const id = asString(firstOf(row, FIELD_MAP.id)) ?? `row-${i}`;
-    const name = asString(firstOf(row, FIELD_MAP.clientName)) ?? 'Unknown client';
-    return {
-      system: 'onrent' as const,
-      externalId: id,
-      lastActivityAt: undefined,
-      ref: asString(firstOf(row, FIELD_MAP.ref))
-        ? `RF-${asString(firstOf(row, FIELD_MAP.ref))!.replace(/\D/g, '')}`
-        : extractRef(name),
-      clientName: name,
-      clientEmail: asString(firstOf(row, FIELD_MAP.clientEmail)),
-      clientPhone: asString(firstOf(row, FIELD_MAP.clientPhone)),
-      eventStart: asIso(firstOf(row, FIELD_MAP.eventStart)),
-      eventEnd: asIso(firstOf(row, FIELD_MAP.eventEnd)),
-      venue: asString(firstOf(row, FIELD_MAP.venue)),
-      quoteTotal: asNumber(firstOf(row, FIELD_MAP.total)),
-      status: mapOnRentStatus(asString(firstOf(row, FIELD_MAP.status))),
-    } satisfies PartialJob;
-  });
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    const params = new URLSearchParams({
+      [API_SPEC.filters.startsAfter]: from.toISOString(),
+      [API_SPEC.filters.startsBefore]: to.toISOString(),
+      [API_SPEC.pagination.page]: String(page),
+      [API_SPEC.pagination.perPage]: String(API_SPEC.pagination.maxPerPage),
+    });
+
+    const json = (await currentRmsGet(API_SPEC.endpoints.opportunities, params)) as
+      | { opportunities?: Opportunity[]; meta?: { total_row_count?: number } }
+      | Opportunity[];
+
+    const rows: Opportunity[] = Array.isArray(json) ? json : (json?.opportunities ?? []);
+    if (rows.length === 0) break;
+
+    for (const o of rows) {
+      const id = String(o.id ?? '');
+      if (!id) continue;
+
+      const clientName = o.member?.name ?? o.billing_address?.name ?? o.subject ?? 'Unknown client';
+
+      // Current RMS opportunity numbers are the natural job reference. Fall
+      // back to anything reference-shaped written into the subject.
+      const ref = o.number != null ? `RF-${String(o.number).replace(/\D/g, '')}` : extractRef(o.subject);
+
+      out.push({
+        system: 'onrent',
+        externalId: id,
+        url: process.env.ONRENT_SUBDOMAIN
+          ? `https://${process.env.ONRENT_SUBDOMAIN}.current-rms.com/opportunities/${id}`
+          : undefined,
+        lastActivityAt: asIso(o.updated_at) ?? asIso(o.created_at),
+        ref,
+        clientName,
+        clientEmail: o.member?.email,
+        clientPhone: o.member?.phone,
+        // Delivery/collection bracket the job more accurately than the
+        // charge period when both are present.
+        eventStart: asIso(o.deliver_starts_at) ?? asIso(o.starts_at),
+        eventEnd: asIso(o.collect_ends_at) ?? asIso(o.ends_at),
+        venue: venueText(o),
+        // Prefer the tax-inclusive figure: it is what the client actually pays.
+        quoteTotal: asNumber(o.charge_total_with_tax) ?? asNumber(o.charge_total),
+        status: mapOnRentStatus(statusText(o)),
+      });
+    }
+
+    if (rows.length < API_SPEC.pagination.maxPerPage) break;
+  }
+
+  return out;
+}
+
+/** Confirms credentials work, for the Setup page. */
+export async function verifyOnRent(): Promise<{ ok: true; detail: string }> {
+  const params = new URLSearchParams({ [API_SPEC.pagination.perPage]: '1' });
+  const json = (await currentRmsGet(API_SPEC.endpoints.opportunities, params)) as {
+    meta?: { total_row_count?: number };
+  };
+  const total = json?.meta?.total_row_count;
+  return {
+    ok: true,
+    detail: total != null ? `Connected. ${total} opportunities visible.` : 'Connected.',
+  };
 }

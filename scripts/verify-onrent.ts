@@ -1,65 +1,40 @@
 /**
- * On Rent Events API discovery tool.
+ * On Rent Events / Current RMS API verifier.
  *
- * WHY THIS EXISTS: unlike the other connectors, nothing at all is known about
- * the On Rent Events API — not the base URL, the auth header, the endpoint
- * paths, or the field names. This script works it out empirically from a base
- * URL and a key, so the connector can be finished without waiting on vendor
- * documentation that may never arrive.
+ * On Rent Events runs on Current RMS, so this targets that API directly.
+ * It confirms the credentials work, reports the real response shape, and
+ * — importantly — lists the opportunity status names actually in use, which
+ * is what the connector's status mapping has to match.
  *
  * RUN:  npm run verify:onrent
  *
- * NEEDS two environment variables:
- *   ONRENT_API_BASE   e.g. https://api.onrentevents.com
- *   ONRENT_API_KEY    your key
+ * NEEDS:
+ *   ONRENT_SUBDOMAIN  first part of your Current RMS web address
+ *   ONRENT_API_KEY    System Setup → Integrations → API
  *
  * SAFETY:
- *  - The key is read from the environment, never a command-line argument,
- *    which would persist in shell history.
- *  - It is never printed, never written to disk, and sent only to the host
- *    given in ONRENT_API_BASE.
- *  - Only response SHAPES are reported — field names, types and detected
- *    date formats. Client names, addresses and money values are NOT printed,
- *    so the output is safe to share.
+ *  - Credentials are read from the environment, never command-line arguments
+ *    that would persist in shell history, and are never printed.
+ *  - Only field NAMES, types and status labels are reported. Client names,
+ *    addresses, email addresses and money values are not printed, so the
+ *    output is safe to share.
  */
 
-const BASE = process.env.ONRENT_API_BASE?.replace(/\/$/, '');
+const SUBDOMAIN = process.env.ONRENT_SUBDOMAIN;
 const KEY = process.env.ONRENT_API_KEY;
+const BASE = process.env.ONRENT_API_BASE?.replace(/\/$/, '') ?? 'https://api.current-rms.com/api/v1';
 
-/** Header styles to try, commonest first. */
-const AUTH_STYLES: { name: string; headers: (k: string) => Record<string, string> }[] = [
-  { name: 'Authorization: Bearer', headers: (k) => ({ Authorization: `Bearer ${k}` }) },
-  { name: 'X-API-KEY', headers: (k) => ({ 'X-API-KEY': k }) },
-  { name: 'X-Auth-Token', headers: (k) => ({ 'X-Auth-Token': k }) },
-  { name: 'api-key', headers: (k) => ({ 'api-key': k }) },
-  { name: 'Authorization: raw', headers: (k) => ({ Authorization: k }) },
-  {
-    name: 'HTTP Basic (key as user)',
-    headers: (k) => ({ Authorization: `Basic ${Buffer.from(`${k}:`).toString('base64')}` }),
-  },
-];
+/** The documented scheme first, then fallbacks in case it differs. */
+const AUTH_STYLES: { name: string; headers: Record<string, string> }[] = [];
 
-/** Paths a rental/event system plausibly exposes. Cheap to try them all. */
-const PATHS = [
-  '/quotes',
-  '/api/quotes',
-  '/api/v1/quotes',
-  '/v1/quotes',
-  '/opportunities',
-  '/api/v1/opportunities',
-  '/bookings',
-  '/api/v1/bookings',
-  '/orders',
-  '/api/v1/orders',
-  '/jobs',
-  '/api/v1/jobs',
-  '/events',
-  '/api/v1/events',
-  '/api/v1/customers',
-  '/customers',
-  '/me',
-  '/api/v1/me',
-];
+function buildAuthStyles(sub: string, key: string) {
+  AUTH_STYLES.push(
+    { name: 'X-SUBDOMAIN + X-AUTH-TOKEN', headers: { 'X-SUBDOMAIN': sub, 'X-AUTH-TOKEN': key } },
+    { name: 'X-SUBDOMAIN + Authorization Bearer', headers: { 'X-SUBDOMAIN': sub, Authorization: `Bearer ${key}` } },
+    { name: 'X-AUTH-TOKEN only', headers: { 'X-AUTH-TOKEN': key } },
+    { name: 'Authorization Bearer only', headers: { Authorization: `Bearer ${key}` } },
+  );
+}
 
 interface Probe {
   status: number;
@@ -71,7 +46,7 @@ async function probe(url: string, headers: Record<string, string>): Promise<Prob
   try {
     const res = await fetch(url, {
       headers: { ...headers, Accept: 'application/json' },
-      signal: AbortSignal.timeout(15_000),
+      signal: AbortSignal.timeout(20_000),
     });
     const raw = await res.text();
     let json: unknown = null;
@@ -80,36 +55,30 @@ async function probe(url: string, headers: Record<string, string>): Promise<Prob
     } catch {
       /* not JSON */
     }
-    return { status: res.status, json, raw: raw.slice(0, 200) };
+    return { status: res.status, json, raw: raw.slice(0, 220) };
   } catch (err) {
     return { status: 0, json: null, raw: err instanceof Error ? err.message : 'error' };
   }
 }
 
-/** Describe a value's type, flagging anything that looks like a date or money. */
+/** Field name and type only — never the value. */
 function typeOf(key: string, v: unknown): string {
   if (v === null) return 'null';
   const t = typeof v;
   if (t === 'string') {
     const s = v as string;
     if (/^\d{4}-\d{2}-\d{2}/.test(s)) return 'string — ISO DATE';
-    if (/^\d+(\.\d+)?$/.test(s) && /total|price|amount|cost|value/i.test(key))
-      return 'string — MONEY';
+    if (/^-?\d+(\.\d+)?$/.test(s)) return 'string — NUMERIC (money?)';
     return 'string';
   }
-  if (t === 'number') {
+  if (t === 'number' && /time|date|start|end|created|updated/i.test(key)) {
     const n = v as number;
-    if (/time|date|start|end|created|updated/i.test(key)) {
-      if (n > 1e11) return `number — MILLIseconds (${new Date(n).toISOString()})`;
-      if (n > 1e8) return `number — SECONDS (${new Date(n * 1000).toISOString()})`;
-    }
-    if (/total|price|amount|cost|value/i.test(key)) return 'number — MONEY';
-    return 'number';
+    if (n > 1e11) return `number — MILLIseconds`;
+    if (n > 1e8) return `number — SECONDS`;
   }
   return t;
 }
 
-/** Print field names and types only — never the values. */
 function shape(value: unknown, depth = 0): string {
   const pad = '  '.repeat(depth + 1);
   if (value === null) return 'null';
@@ -118,6 +87,7 @@ function shape(value: unknown, depth = 0): string {
     return `array[${value.length}] of:${shape(value[0], depth + 1)}`;
   }
   if (typeof value === 'object') {
+    if (depth > 3) return '{…}';
     return Object.entries(value as Record<string, unknown>)
       .map(([k, v]) =>
         v !== null && typeof v === 'object'
@@ -130,84 +100,98 @@ function shape(value: unknown, depth = 0): string {
 }
 
 async function main() {
-  console.log('\n=== On Rent Events API discovery ===\n');
+  console.log('\n=== On Rent Events / Current RMS verification ===\n');
 
-  if (!BASE || !KEY) {
+  if (!SUBDOMAIN || !KEY) {
     console.error('Missing configuration. Both of these must be set:\n');
-    console.error('  ONRENT_API_BASE   e.g. https://api.onrentevents.com');
-    console.error('  ONRENT_API_KEY    your key\n');
-    console.error('Set them as environment variables — not on the command line,');
-    console.error('which would leave the key in your shell history.\n');
-    console.error('If you do not know the base URL yet, that is the one thing');
-    console.error('On Rent Events support has to tell you.\n');
+    console.error('  ONRENT_SUBDOMAIN  first part of your Current RMS web address');
+    console.error('                    (https://XXXX.current-rms.com → XXXX)');
+    console.error('  ONRENT_API_KEY    Current RMS → System Setup → Integrations → API\n');
+    console.error('Set them as environment variables, not on the command line.\n');
     process.exit(1);
   }
 
-  console.log(`Base URL: ${BASE}`);
-  console.log(`API key: present (${KEY.length} characters, not printed)\n`);
+  buildAuthStyles(SUBDOMAIN, KEY);
+  console.log(`Base URL:  ${BASE}`);
+  console.log(`Subdomain: ${SUBDOMAIN}`);
+  console.log(`API key:   present (${KEY.length} characters, not printed)\n`);
 
-  // --- Step 1: is the host even reachable? --------------------------------
-  const reach = await probe(BASE, {});
+  // --- Step 1: reachability -----------------------------------------------
+  const reach = await probe(`${BASE}/opportunities?per_page=1`, {});
   if (reach.status === 0) {
     console.error(`Cannot reach ${BASE}.`);
     console.error(`Reason: ${reach.raw}\n`);
-    console.error('If running in a cloud session, add that host to the');
-    console.error("environment's Allowed domains, then start a new session.\n");
+    console.error('In a cloud session, add api.current-rms.com to the environment\'s');
+    console.error('Allowed domains under Network access, then start a new session.\n');
     process.exit(2);
   }
-  console.log(`Host reachable (HTTP ${reach.status}).\n`);
+  console.log(`Host reachable (HTTP ${reach.status} without credentials, as expected).\n`);
 
-  // --- Step 2: find a working auth style + path ---------------------------
-  console.log('Probing endpoints (this takes a moment)...\n');
-  const hits: { path: string; style: string; probe: Probe }[] = [];
-
-  for (const path of PATHS) {
-    for (const style of AUTH_STYLES) {
-      const r = await probe(`${BASE}${path}`, style.headers(KEY));
-
-      // 404 means wrong path; 401/403 means right path, wrong auth. Both are
-      // informative, but only 2xx is a hit.
-      if (r.status >= 200 && r.status < 300) {
-        console.log(`  HIT  ${r.status}  ${path.padEnd(26)} via ${style.name}`);
-        hits.push({ path, style: style.name, probe: r });
-        break; // this path works; no need to try other auth styles on it
-      }
-      if (r.status === 401 || r.status === 403) {
-        // Path likely exists but auth is wrong — worth reporting once.
-        if (style === AUTH_STYLES[AUTH_STYLES.length - 1]) {
-          console.log(`  auth ${r.status}  ${path.padEnd(26)} exists, but no auth style worked`);
-        }
-        continue;
-      }
-    }
+  // --- Step 2: which auth scheme works? -----------------------------------
+  let working: { name: string; headers: Record<string, string> } | null = null;
+  for (const style of AUTH_STYLES) {
+    const r = await probe(`${BASE}/opportunities?per_page=1`, style.headers);
+    const mark = r.status === 200 ? 'OK  ' : '    ';
+    console.log(`${mark}${String(r.status).padStart(3)}  ${style.name}`);
+    if (r.status === 200 && !working) working = style;
   }
 
-  if (hits.length === 0) {
-    console.error('\nNo endpoint responded successfully.\n');
-    console.error('Most likely one of:');
-    console.error('  - the base URL is wrong (it is often company-specific,');
-    console.error('    e.g. https://yourcompany.onrentevents.com/api)');
-    console.error('  - the key needs a different header than the six tried');
-    console.error('  - the paths differ from the common patterns tried\n');
-    console.error('Ask On Rent Events support for: the base URL, the auth header,');
-    console.error('and the path that lists quotes. That is all that is missing.\n');
+  if (!working) {
+    console.error('\nNo auth style returned 200.');
+    console.error('401/403 everywhere means the key or subdomain is wrong.');
+    console.error('404 everywhere means the base URL is wrong — ask On Rent Events');
+    console.error('whether your account uses a different API host.\n');
     process.exit(3);
   }
 
-  // --- Step 3: report the shapes ------------------------------------------
-  console.log(`\n${hits.length} working endpoint(s) found.\n`);
-  for (const hit of hits) {
-    console.log(`--- ${hit.path}  (auth: ${hit.style}) ---`);
-    console.log(shape(hit.probe.json));
-    console.log('');
-  }
+  console.log(`\n--- WORKING: ${working.name} ---\n`);
 
-  console.log('=== Done. Paste this output back and the connector can be finished. ===');
-  console.log('(Field names and types only — no client names, addresses or amounts.)\n');
+  // --- Step 3: real response shape ----------------------------------------
+  const sample = await probe(`${BASE}/opportunities?per_page=3`, working.headers);
+  console.log('OPPORTUNITIES response shape:');
+  console.log(shape(sample.json), '\n');
+
+  // --- Step 4: the status names actually in use ---------------------------
+  // This is what the connector's status mapping must match, and it is the
+  // most likely thing to be wrong, because every business names its own.
+  const payload = sample.json as { opportunities?: Record<string, unknown>[] } | null;
+  const rows = payload?.opportunities ?? [];
+  const statuses = new Set<string>();
+  for (const r of rows) {
+    for (const field of ['status_name', 'state_name', 'status', 'state']) {
+      const v = r[field];
+      if (typeof v === 'string') statuses.add(`${field}="${v}"`);
+      else if (typeof v === 'number') statuses.add(`${field}=${v}`);
+    }
+  }
+  console.log('STATUS values seen in this sample:');
+  console.log(statuses.size ? '  ' + [...statuses].join('\n  ') : '  (none found)');
+  console.log(
+    '\nThese must match mapOnRentStatus() in src/lib/connectors/onrent.ts.\n' +
+      'A larger sample gives a fuller picture — raise per_page if needed.\n',
+  );
+
+  // --- Step 5: does date filtering work? ----------------------------------
+  const from = new Date(Date.now() - 30 * 86400_000).toISOString();
+  const to = new Date(Date.now() + 120 * 86400_000).toISOString();
+  const filtered = await probe(
+    `${BASE}/opportunities?q[starts_at_gteq]=${encodeURIComponent(from)}` +
+      `&q[starts_at_lteq]=${encodeURIComponent(to)}&per_page=1`,
+    working.headers,
+  );
+  console.log(
+    `DATE FILTER (q[starts_at_gteq]): HTTP ${filtered.status}` +
+      (filtered.status === 200
+        ? ' — works.'
+        : ' — NOT working; the connector would need to filter in code instead.'),
+  );
+
+  console.log('\n=== Done. Paste this output back and the connector can be confirmed. ===');
+  console.log('(Field names, types and status labels only — no client data.)\n');
 }
 
 main().catch((e) => {
-  console.error('Discovery failed:', e instanceof Error ? e.message : e);
+  console.error('Verification failed:', e instanceof Error ? e.message : e);
   process.exit(1);
 });
 
