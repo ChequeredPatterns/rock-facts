@@ -4,6 +4,8 @@ import { Wordmark } from '@/components/Wordmark';
 import { getDashboard } from '@/lib/data';
 import { countBySeverity } from '@/lib/actions';
 import { BUSINESS_TZ } from '@/lib/domain';
+import { cookies } from 'next/headers';
+import { SESSION_COOKIE, gateMode, verifySession } from '@/lib/auth/viewer';
 
 export const metadata: Metadata = {
   title: 'The Rock Factory Central',
@@ -15,15 +17,23 @@ export const metadata: Metadata = {
 export const dynamic = 'force-dynamic';
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // Who, if anyone, is signed in. The nav is built from this: offering links
+  // to pages the visitor cannot open just bounces them back to the sign-in,
+  // and without a way out there is no signing off a shared office machine.
+  const viewer = await verifySession((await cookies()).get(SESSION_COOKIE)?.value);
+  const signedIn = gateMode() !== 'enforced' || viewer !== null;
+
   // The action count is shown in the nav on every page, so the number of
   // things needing attention is visible wherever you are in the app.
   let urgentCount = 0;
-  try {
-    const data = await getDashboard();
-    urgentCount = countBySeverity(data.actions).urgent;
-  } catch {
-    // Never let a nav badge take the whole page down.
-    urgentCount = 0;
+  if (signedIn) {
+    try {
+      const data = await getDashboard();
+      urgentCount = countBySeverity(data.actions).urgent;
+    } catch {
+      // Never let a nav badge take the whole page down.
+      urgentCount = 0;
+    }
   }
 
   const today = new Intl.DateTimeFormat('en-NZ', {
@@ -56,14 +66,21 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               </div>
             </div>
 
-            <nav className="nav">
-              <a href="/">Timeline</a>
-              <a href="/actions">
-                Action
-                {urgentCount > 0 ? <span className="count">{urgentCount}</span> : null}
-              </a>
-              <a href="/setup">Setup</a>
-            </nav>
+            {signedIn ? (
+              <nav className="nav">
+                <a href="/">Timeline</a>
+                <a href="/actions">
+                  Action
+                  {urgentCount > 0 ? <span className="count">{urgentCount}</span> : null}
+                </a>
+                <a href="/setup">Setup</a>
+                {viewer ? (
+                  <a href="/api/auth/logout" title={`Signed in as ${viewer.email}`}>
+                    Sign out
+                  </a>
+                ) : null}
+              </nav>
+            ) : null}
           </header>
 
           {children}

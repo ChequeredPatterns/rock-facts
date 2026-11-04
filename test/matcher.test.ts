@@ -9,6 +9,12 @@ import {
 } from '../src/lib/matcher';
 import { mapStageToStatus } from '../src/lib/connectors/streak';
 import { mapOnRentStatus } from '../src/lib/connectors/onrent';
+import {
+  gateMode,
+  isAllowedViewer,
+  signSession,
+  verifySession,
+} from '../src/lib/auth/viewer';
 import { buildActionList, type ConnectedSystems } from '../src/lib/actions';
 import {
   businessDayKey,
@@ -430,4 +436,165 @@ test('Current RMS: a completed order reads as completed, not merely accepted', (
 test('Current RMS: nothing at all maps to nothing', () => {
   assert.equal(mapOnRentStatus(undefined, undefined), undefined);
   assert.equal(mapOnRentStatus('', ''), undefined);
+});
+
+// --- Who may view the dashboard --------------------------------------------
+// This is the gate that keeps live client data off the open internet, so the
+// cases that matter most here are the ones where it must REFUSE.
+
+function withEnv<T>(vars: Record<string, string | undefined>, fn: () => T): T {
+  const saved: Record<string, string | undefined> = {};
+  for (const k of Object.keys(vars)) {
+    saved[k] = process.env[k];
+    if (vars[k] === undefined) delete process.env[k];
+    else process.env[k] = vars[k];
+  }
+  const restore = () => {
+    for (const k of Object.keys(vars)) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
+  };
+  let out: T;
+  try {
+    out = fn();
+  } catch (err) {
+    restore();
+    throw err;
+  }
+  // Restore only once the async body has settled, or a later test would run
+  // against environment variables this one had swapped out.
+  if (out instanceof Promise) return out.finally(restore) as T;
+  restore();
+  return out;
+}
+
+const NO_CREDS = {
+  GOOGLE_REFRESH_TOKEN: undefined,
+  STREAK_API_KEY: undefined,
+  CONNECTEAM_API_KEY: undefined,
+  ONRENT_API_KEY: undefined,
+  GOOGLE_CLIENT_ID: undefined,
+  GOOGLE_CLIENT_SECRET: undefined,
+  SESSION_SECRET: undefined,
+  ALLOWED_EMAILS: undefined,
+  ALLOWED_EMAIL_DOMAINS: undefined,
+};
+
+test('no allowlist admits nobody, rather than everybody', () => {
+  withEnv({ ...NO_CREDS }, () => {
+    assert.equal(isAllowedViewer('anyone@gmail.com'), false);
+  });
+});
+
+test('an allowlisted address is admitted, case-insensitively', () => {
+  withEnv({ ...NO_CREDS, ALLOWED_EMAILS: 'Boss@Example.com, crew@example.com' }, () => {
+    assert.equal(isAllowedViewer('boss@example.com'), true);
+    assert.equal(isAllowedViewer('BOSS@EXAMPLE.COM'), true);
+    assert.equal(isAllowedViewer('someone.else@example.com'), false);
+  });
+});
+
+test('a domain allowlist admits that domain and no other', () => {
+  withEnv({ ...NO_CREDS, ALLOWED_EMAIL_DOMAINS: '@example.com' }, () => {
+    assert.equal(isAllowedViewer('anyone@example.com'), true);
+    assert.equal(isAllowedViewer('attacker@evil.com'), false);
+    // The domain is the part after the final @, not merely present somewhere.
+    assert.equal(isAllowedViewer('attacker@example.com.evil.com'), false);
+    assert.equal(isAllowedViewer('example.com@evil.com'), false);
+  });
+});
+
+test('malformed addresses are refused', () => {
+  withEnv({ ...NO_CREDS, ALLOWED_EMAIL_DOMAINS: 'example.com' }, () => {
+    assert.equal(isAllowedViewer(undefined), false);
+    assert.equal(isAllowedViewer(''), false);
+    assert.equal(isAllowedViewer('no-at-sign'), false);
+    assert.equal(isAllowedViewer('@example.com'), false);
+    assert.equal(isAllowedViewer('a@b@example.com'), false);
+  });
+});
+
+test('the gate opens only while there is no real data to protect', () => {
+  withEnv({ ...NO_CREDS }, () => {
+    assert.equal(gateMode(), 'open');
+  });
+});
+
+test('one connector key is enough to turn the gate on', () => {
+  withEnv({ ...NO_CREDS, ONRENT_API_KEY: 'x' }, () => {
+    // Sign-in is not configured, so it must lock rather than open.
+    assert.equal(gateMode(), 'locked');
+  });
+});
+
+test('with data and a working sign-in, the gate enforces', () => {
+  withEnv(
+    {
+      ...NO_CREDS,
+      ONRENT_API_KEY: 'x',
+      GOOGLE_CLIENT_ID: 'id',
+      GOOGLE_CLIENT_SECRET: 'secret',
+      ALLOWED_EMAILS: 'boss@example.com',
+    },
+    () => {
+      assert.equal(gateMode(), 'enforced');
+    },
+  );
+});
+
+test('a session round-trips, and a tampered one is rejected', async () => {
+  await withEnv(
+    { ...NO_CREDS, GOOGLE_CLIENT_SECRET: 'signing-key', ALLOWED_EMAILS: 'boss@example.com' },
+    async () => {
+      const token = await signSession('boss@example.com');
+      assert.ok(token);
+      assert.equal((await verifySession(token!))?.email, 'boss@example.com');
+
+      // Swapping the payload for another address must not survive the signature.
+      const forgedBody = Buffer.from(
+        JSON.stringify({ email: 'attacker@evil.com', exp: Math.floor(Date.now() / 1000) + 999 }),
+      ).toString('base64url');
+      assert.equal(await verifySession(`${forgedBody}.${token!.split('.')[1]}`), null);
+      assert.equal(await verifySession('garbage'), null);
+      assert.equal(await verifySession(undefined), null);
+    },
+  );
+});
+
+test('an expired session is rejected', async () => {
+  await withEnv(
+    { ...NO_CREDS, GOOGLE_CLIENT_SECRET: 'signing-key', ALLOWED_EMAILS: 'boss@example.com' },
+    async () => {
+      const token = await signSession('boss@example.com', Date.now());
+      // Fifteen days later, past the fourteen-day life.
+      assert.equal(await verifySession(token!, Date.now() + 15 * 86400_000), null);
+    },
+  );
+});
+
+test('a session signed with a different key is rejected', async () => {
+  const token = await withEnv(
+    { ...NO_CREDS, GOOGLE_CLIENT_SECRET: 'old-key', ALLOWED_EMAILS: 'boss@example.com' },
+    async () => signSession('boss@example.com'),
+  );
+  await withEnv(
+    { ...NO_CREDS, GOOGLE_CLIENT_SECRET: 'rotated-key', ALLOWED_EMAILS: 'boss@example.com' },
+    async () => {
+      assert.equal(await verifySession((await token) ?? undefined), null);
+    },
+  );
+});
+
+test('removing someone from the allowlist invalidates their existing session', async () => {
+  const token = await withEnv(
+    { ...NO_CREDS, GOOGLE_CLIENT_SECRET: 'k', ALLOWED_EMAILS: 'leaver@example.com' },
+    async () => signSession('leaver@example.com'),
+  );
+  await withEnv(
+    { ...NO_CREDS, GOOGLE_CLIENT_SECRET: 'k', ALLOWED_EMAILS: 'boss@example.com' },
+    async () => {
+      assert.equal(await verifySession((await token) ?? undefined), null);
+    },
+  );
 });

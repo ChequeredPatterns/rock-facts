@@ -40,6 +40,48 @@ so you have something real to show people before any keys exist.
 
 ---
 
+## Part 0.5 — Decide who can see it (do this before any keys)
+
+**A Netlify address is not private.** Every certificate issued for one is
+published in the public Certificate Transparency logs, which are scraped
+continuously, so "nobody knows the link" protects nothing.
+
+Rock Factory Central handles this itself, at no cost — Netlify's own password
+protection is a paid plan, and this does a better job anyway.
+
+**How it behaves:**
+
+| What is configured | What the site does |
+|---|---|
+| No connector keys | Open. Sample data only, so nothing to protect |
+| Any real key, nobody allowed in | **Locks completely** |
+| Any real key, people allowed in | Google sign-in required |
+
+The middle row is deliberate. The gate switches on the instant a credential
+appears, so there is never a window where live client data sits on the open
+internet because the login had not been set up yet. If it cannot let anyone
+in at that moment it closes instead — staff being locked out is recoverable
+and obvious; the whole internet being let in is neither.
+
+**So set this first.** On Netlify, add:
+
+- `ALLOWED_EMAILS` — the Google addresses allowed to view, comma separated,
+  e.g. `boss@therockfactory.co.nz,ops@therockfactory.co.nz`
+- or `ALLOWED_EMAIL_DOMAINS` — a whole work domain, e.g.
+  `therockfactory.co.nz`, to avoid listing people one by one
+
+Use a domain you control. Never `gmail.com`, which would admit anyone on
+earth with a Google account.
+
+A sign-in lasts fourteen days. Removing someone from `ALLOWED_EMAILS` locks
+them out on their very next page load, without waiting for that to expire —
+which is what you want the day someone leaves.
+
+The **Setup** page states plainly which of the three rows above you are
+currently in, so you never have to guess whether the dashboard is public.
+
+---
+
 ## Part 1 — Google (the only step needing the account owner)
 
 Rock Factory Central asks for **read-only** access. It cannot send email,
@@ -68,12 +110,21 @@ thing that makes someone hesitate.
    - Under **Authorised redirect URIs**, click Add and paste your address from
      Part 0 with `/api/auth/google/callback` on the end, exactly like this:
 
+     Add **both** of these, one at a time:
+
      ```
      https://therockfactorycentral.netlify.app/api/auth/google/callback
      ```
 
-     Copy that line exactly as it is — it is already filled in for this site.
-     It must match character for character: `https`, no trailing slash, no
+     ```
+     https://therockfactorycentral.netlify.app/api/auth/login/callback
+     ```
+
+     The first connects the business Google account once. The second is how
+     staff sign in to view the dashboard. Both are needed.
+
+     Copy them exactly as they are — already filled in for this site. They
+     must match character for character: `https`, no trailing slash, no
      `www`. A mismatch here is the single most common failure, and the app
      will tell you if it happens.
 6. Click **Create**. Copy the **Client ID** and **Client secret**.

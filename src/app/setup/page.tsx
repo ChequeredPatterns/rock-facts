@@ -8,7 +8,8 @@
 
 import { headers } from 'next/headers';
 import { getDashboard } from '@/lib/data';
-import { redirectUriFromHeaders } from '@/lib/connectors/google-oauth';
+import { CALLBACK_PATH, redirectUriFromHeaders } from '@/lib/connectors/google-oauth';
+import { LOGIN_CALLBACK_PATH, allowedViewers, gateMode } from '@/lib/auth/viewer';
 import { SYSTEMS, isConfigured, missingEnv } from '@/lib/config';
 import { SYSTEM_LABELS } from '@/lib/domain';
 import { listCalendars, type CalendarSummary } from '@/lib/connectors/google';
@@ -68,6 +69,12 @@ export default async function SetupPage() {
   // OAuth route itself uses, so what is shown here is exactly what gets sent —
   // and so it stays correct if the site is ever renamed.
   const redirectUri = redirectUriFromHeaders(await headers());
+  // The staff sign-in uses a second, separate redirect URI on the same OAuth
+  // client. Both must be registered or one of the two flows will fail.
+  const loginRedirectUri = redirectUri.replace(CALLBACK_PATH, LOGIN_CALLBACK_PATH);
+
+  const gate = gateMode();
+  const viewers = allowedViewers();
 
   return (
     <>
@@ -78,6 +85,58 @@ export default async function SetupPage() {
           connection is a key or sign-in pasted into the hosting dashboard.
         </p>
       </div>
+
+      {/* --- Who can see this. Stated plainly, because "is the dashboard
+          public?" is otherwise unanswerable without reading the code. --- */}
+      <section className={gate === 'enforced' ? 'system connected' : 'system'}>
+        <div className="system-head">
+          <h2>Who can see this</h2>
+          {gate === 'enforced' ? (
+            <span className="chip ok">Sign-in required</span>
+          ) : gate === 'locked' ? (
+            <span className="chip urgent">Locked</span>
+          ) : (
+            <span className="chip soon">Open to anyone with the link</span>
+          )}
+        </div>
+
+        {gate === 'open' ? (
+          <p>
+            No connector keys are set, so the dashboard holds nothing but sample data and
+            anyone with the address can read it. <strong>The moment a real key is added
+            the gate turns itself on</strong>, so live client data is never served to the
+            open internet. Set <code>ALLOWED_EMAILS</code> before adding those keys, or the
+            site will lock itself instead.
+          </p>
+        ) : gate === 'locked' ? (
+          <p style={{ color: 'var(--urgent)' }}>
+            Real data is configured but nobody can sign in, so the whole site is closed.
+            Add <code>GOOGLE_CLIENT_ID</code>, <code>GOOGLE_CLIENT_SECRET</code> and{' '}
+            <code>ALLOWED_EMAILS</code> to reopen it.
+          </p>
+        ) : (
+          <>
+            <p>
+              The dashboard is private. Only these Google accounts can open it, and a
+              sign-in lasts fourteen days. Removing an address here locks that person out
+              immediately, without waiting for their session to lapse.
+            </p>
+            <ul className="cal-list">
+              {viewers.emails.map((e) => (
+                <li key={e} className="cal">
+                  <span className="cal-name">{e}</span>
+                </li>
+              ))}
+              {viewers.domains.map((d) => (
+                <li key={d} className="cal">
+                  <span className="cal-name">Anyone at</span>
+                  <code>@{d}</code>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+      </section>
 
       {/* --- No Google app yet. Without this the page offered nothing at all
           for Google, so anyone looking for the sign-in found a blank space and
@@ -104,13 +163,20 @@ export default async function SetupPage() {
             </li>
           </ul>
           <p style={{ marginTop: 14 }}>
-            When creating the OAuth client, set its{' '}
-            <strong>Authorised redirect URI</strong> to exactly this — copy it from here rather
-            than typing it, as a mismatch is the most common reason the sign-in fails:
+            When creating the OAuth client, add <strong>both</strong> of these under{' '}
+            <strong>Authorised redirect URIs</strong> — copy them from here rather than typing
+            them, as a mismatch is the most common reason the sign-in fails:
           </p>
-          <p>
-            <code>{redirectUri}</code>
-          </p>
+          <ul className="cal-list">
+            <li className="cal">
+              <span className="cal-name">Connecting Google</span>
+              <code>{redirectUri}</code>
+            </li>
+            <li className="cal">
+              <span className="cal-name">Staff signing in</span>
+              <code>{loginRedirectUri}</code>
+            </li>
+          </ul>
           <p style={{ marginTop: 14, color: 'var(--soon)' }}>
             After adding both values, trigger a deploy on Netlify. This page will then show a{' '}
             <strong>Sign in with Google</strong> button. Step-by-step instructions are in{' '}
