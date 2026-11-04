@@ -63,7 +63,7 @@ export const SYSTEMS: SystemConfig[] = [
     requiredEnv: ['ONRENT_API_KEY', 'ONRENT_SUBDOMAIN'],
     setupHint:
       'On Rent Events runs on Current RMS. The API key comes from System Setup → Integrations → API, and the subdomain is the first part of your Current RMS web address. Note that Current RMS keys cannot be made read-only, so keep this one secret.',
-    specVerified: false,
+    specVerified: true,
   },
 ];
 

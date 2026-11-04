@@ -6,7 +6,9 @@
  * instead of asking whether "the dashboard is broken".
  */
 
+import { headers } from 'next/headers';
 import { getDashboard } from '@/lib/data';
+import { redirectUriFromHeaders } from '@/lib/connectors/google-oauth';
 import { SYSTEMS, isConfigured, missingEnv } from '@/lib/config';
 import { SYSTEM_LABELS } from '@/lib/domain';
 import { listCalendars, type CalendarSummary } from '@/lib/connectors/google';
@@ -61,6 +63,12 @@ export default async function SetupPage() {
 
   const chosenScheduler = (process.env.CONNECTEAM_SCHEDULER_ID ?? '').trim();
 
+  // The redirect URI must match what is registered in Google Cloud Console
+  // character for character. Derive it from the same forwarded headers the
+  // OAuth route itself uses, so what is shown here is exactly what gets sent —
+  // and so it stays correct if the site is ever renamed.
+  const redirectUri = redirectUriFromHeaders(await headers());
+
   return (
     <>
       <div className="page-head">
@@ -70,6 +78,46 @@ export default async function SetupPage() {
           connection is a key or sign-in pasted into the hosting dashboard.
         </p>
       </div>
+
+      {/* --- No Google app yet. Without this the page offered nothing at all
+          for Google, so anyone looking for the sign-in found a blank space and
+          no clue why. Show the two missing values and the exact redirect URI,
+          built from the live site address so it cannot be mistyped. --- */}
+      {stage === 'no-credentials' ? (
+        <section className="system" style={{ borderColor: 'rgba(61,219,245,.4)' }}>
+          <div className="system-head">
+            <h2>Connect Google</h2>
+            <span className="chip soon">Two values needed first</span>
+          </div>
+          <p>
+            <strong>There is no sign-in button yet</strong> — it appears here as soon as this site
+            knows which Google app to sign in to. That takes two values from the Google Cloud
+            Console, added on Netlify under{' '}
+            <strong>Site configuration → Environment variables</strong>:
+          </p>
+          <ul className="env-list">
+            <li>
+              <code>GOOGLE_CLIENT_ID</code>
+            </li>
+            <li>
+              <code>GOOGLE_CLIENT_SECRET</code>
+            </li>
+          </ul>
+          <p style={{ marginTop: 14 }}>
+            When creating the OAuth client, set its{' '}
+            <strong>Authorised redirect URI</strong> to exactly this — copy it from here rather
+            than typing it, as a mismatch is the most common reason the sign-in fails:
+          </p>
+          <p>
+            <code>{redirectUri}</code>
+          </p>
+          <p style={{ marginTop: 14, color: 'var(--soon)' }}>
+            After adding both values, trigger a deploy on Netlify. This page will then show a{' '}
+            <strong>Sign in with Google</strong> button. Step-by-step instructions are in{' '}
+            <code>SETUP.md</code>, Part 1.
+          </p>
+        </section>
+      ) : null}
 
       {/* --- Google sign-in, the one step that needs the account owner --- */}
       {stage === 'ready-to-connect' ? (

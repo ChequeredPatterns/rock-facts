@@ -5,13 +5,15 @@
  * Current RMS API rather than guessing at a bespoke one.
  *
  * ┌─────────────────────────────────────────────────────────────────────────┐
- * │ SPEC STATUS: likely correct, NOT YET CONFIRMED against the live API.    │
+ * │ SPEC STATUS: CONFIRMED against the live account (therockfactory).       │
  * │                                                                         │
- * │ api.current-rms.com is blocked by this build environment's network      │
- * │ policy, so the details below come from secondary sources rather than    │
- * │ Current RMS's own documentation at https://api.current-rms.com/doc.     │
+ * │ Checked end to end: the X-SUBDOMAIN / X-AUTH-TOKEN header pair          │
+ * │ authenticates, /opportunities returns, the Ransack date filter          │
+ * │ q[starts_at_gteq] is accepted, and every field read below is present    │
+ * │ on live records. The status mapping was rebuilt from the real state     │
+ * │ and status values — see mapOnRentStatus.                                │
  * │                                                                         │
- * │ Confirm with:  npm run verify:onrent                                    │
+ * │ Re-check at any time with:  npm run verify:onrent                       │
  * │                                                                         │
  * │ KNOWN RISK — API VERSION. A v2.1 of the Opportunities API was reported  │
  * │ released in June 2026, keeping the same URL and query parameters but    │
@@ -55,24 +57,61 @@ export const API_SPEC = {
   pagination: { page: 'page', perPage: 'per_page', maxPerPage: 100 },
 } as const;
 
-export const SPEC_CONFIRMED = false;
+export const SPEC_CONFIRMED = true;
 
 /**
- * Map a Current RMS opportunity status to our pipeline status.
+ * Map a Current RMS opportunity to our pipeline status.
  *
- * Matched on the status NAME rather than its numeric code: the codes are
- * undocumented here and differ between API versions, whereas the names are
- * stable and human-meaningful. Order matters — "not accepted" contains
- * "accepted", so the negative cases are tested first.
+ * Current RMS carries TWO independent fields, and the distinction matters:
+ *
+ *   state  — the lifecycle: Draft → Quotation → Order. Authoritative.
+ *   status — a sub-status within that state: Open, Provisional, Active.
+ *
+ * Verified against the live account, where all 50 opportunities were one of:
+ *
+ *   Quotation / Provisional   (29)
+ *   Order     / Open          (15)
+ *   Draft     / Open           (3)
+ *   Order     / Active         (3)
+ *
+ * An earlier version read `status_name` alone and fell back to `state_name`
+ * only when it was absent. Because "Open" matches none of the rules, every
+ * Order sitting on Open — 15 of 50, the confirmed work — came back with no
+ * status at all, and so never counted as committed for crew or logistics.
+ * "Open" is also not a lifecycle signal in its own right: it appears on both
+ * Orders and Drafts, which belong at opposite ends of the pipeline.
+ *
+ * So the state decides, and the sub-status is consulted only when there is no
+ * state to go on. Matching is on NAMES, not the numeric codes: the codes are
+ * undocumented and differ between API versions, whereas the names are stable.
+ * Order of tests matters — "not accepted" contains "accepted", so the negative
+ * cases are tested first.
  */
-export function mapOnRentStatus(raw: string | undefined): JobStatus | undefined {
-  if (!raw) return undefined;
-  const s = raw.toLowerCase().trim();
-  if (/dead|lost|reject|declin|cancel|void|not\s*accept/.test(s)) return 'not_accepted';
-  if (/complet|closed|returned|invoiced|checked\s*in/.test(s)) return 'completed';
-  if (/order|reserv|confirm|accept|won|issued|active/.test(s)) return 'accepted';
-  if (/quot|provisional|proposal|estimate|pending|draft/.test(s)) return 'quoted';
-  if (/enquir|inquir|lead|new/.test(s)) return 'new_enquiry';
+export function mapOnRentStatus(
+  statusName: string | undefined,
+  stateName?: string | undefined,
+): JobStatus | undefined {
+  const status = (statusName ?? '').toLowerCase().trim();
+  const state = (stateName ?? '').toLowerCase().trim();
+  if (!status && !state) return undefined;
+
+  // Terminal outcomes are decisive and can be recorded in either field.
+  const either = `${state} ${status}`;
+  if (/dead|lost|reject|declin|cancel|void|not\s*accept/.test(either)) return 'not_accepted';
+  if (/complet|closed|returned|invoiced|checked\s*in/.test(either)) return 'completed';
+
+  // The lifecycle state wins whenever it is present.
+  if (state) {
+    if (/order/.test(state)) return 'accepted';
+    if (/quot|proposal|estimate/.test(state)) return 'quoted';
+    if (/draft|enquir|inquir|lead/.test(state)) return 'new_enquiry';
+  }
+
+  // No usable state: fall back to the sub-status. "Open" is deliberately absent
+  // here — on its own it says nothing about where the job sits.
+  if (/reserv|confirm|accept|won|issued|active/.test(status)) return 'accepted';
+  if (/quot|provisional|proposal|estimate|pending/.test(status)) return 'quoted';
+  if (/enquir|inquir|lead|new/.test(status)) return 'new_enquiry';
   return undefined;
 }
 
@@ -115,11 +154,16 @@ function asIso(v: unknown): string | undefined {
   return Number.isNaN(d.getTime()) ? undefined : d.toISOString();
 }
 
-/** Best available status string, whichever shape the response uses. */
+/** The sub-status name, whichever shape the response uses. */
 function statusText(o: Opportunity): string | undefined {
   if (typeof o.status_name === 'string') return o.status_name;
-  if (typeof o.state_name === 'string') return o.state_name;
   if (typeof o.status === 'string') return o.status;
+  return undefined;
+}
+
+/** The lifecycle state name, whichever shape the response uses. */
+function stateText(o: Opportunity): string | undefined {
+  if (typeof o.state_name === 'string') return o.state_name;
   if (typeof o.state === 'string') return o.state;
   return undefined;
 }
@@ -229,7 +273,7 @@ export async function fetchOnRentJobs(from: Date, to: Date): Promise<PartialJob[
         venue: venueText(o),
         // Prefer the tax-inclusive figure: it is what the client actually pays.
         quoteTotal: asNumber(o.charge_total_with_tax) ?? asNumber(o.charge_total),
-        status: mapOnRentStatus(statusText(o)),
+        status: mapOnRentStatus(statusText(o), stateText(o)),
       });
     }
 

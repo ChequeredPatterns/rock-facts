@@ -30,16 +30,30 @@ export const CALLBACK_PATH = '/api/auth/google/callback';
  * actually asked for, and the redirect URI must match them exactly or Google
  * rejects the request.
  */
-export function publicOrigin(request: Request): string {
-  const h = request.headers;
+export function originFromHeaders(h: Headers): string | null {
   const host = h.get('x-forwarded-host') ?? h.get('host');
-  const proto = h.get('x-forwarded-proto') ?? (host?.startsWith('localhost') ? 'http' : 'https');
-  if (host) return `${proto}://${host}`;
-  return new URL(request.url).origin;
+  if (!host) return null;
+  const proto = h.get('x-forwarded-proto') ?? (host.startsWith('localhost') ? 'http' : 'https');
+  return `${proto}://${host}`;
+}
+
+export function publicOrigin(request: Request): string {
+  return originFromHeaders(request.headers) ?? new URL(request.url).origin;
 }
 
 export function redirectUri(request: Request): string {
   return `${publicOrigin(request)}${CALLBACK_PATH}`;
+}
+
+/**
+ * The redirect URI to display on the Setup page, derived from the same
+ * forwarded headers the live OAuth route uses. Sharing `originFromHeaders`
+ * matters: if the page showed a URI the route does not actually send, whoever
+ * copied it into Google Cloud Console would register the wrong one and the
+ * sign-in would fail with the error this page is meant to prevent.
+ */
+export function redirectUriFromHeaders(h: Headers): string {
+  return `${originFromHeaders(h) ?? 'http://localhost:3000'}${CALLBACK_PATH}`;
 }
 
 export function newState(): string {

@@ -8,6 +8,7 @@ import {
   type PartialJob,
 } from '../src/lib/matcher';
 import { mapStageToStatus } from '../src/lib/connectors/streak';
+import { mapOnRentStatus } from '../src/lib/connectors/onrent';
 import { buildActionList, type ConnectedSystems } from '../src/lib/actions';
 import {
   businessDayKey,
@@ -384,4 +385,49 @@ test('unconfirmed crew still count as a shortfall', () => {
   });
   const items = buildActionList([job], ALL_ON, NOW);
   assert.ok(items.find((i) => i.title.startsWith('Short 1 crew')));
+});
+
+// --- On Rent Events / Current RMS status mapping ----------------------------
+// Current RMS carries both a lifecycle `state` and a sub-status `status`. The
+// four combinations below are every one present in the live account, checked
+// across all 50 opportunities, so these are real cases and not invented ones.
+
+test('Current RMS: an Order on "Open" counts as accepted', () => {
+  // The regression that mattered: "Open" matches no rule on its own, so reading
+  // the sub-status alone left 15 of 50 opportunities — the confirmed work —
+  // with no status, and therefore outside the committed set that drives the
+  // crew and logistics warnings.
+  assert.equal(mapOnRentStatus('Open', 'Order'), 'accepted');
+});
+
+test('Current RMS: an Order on "Active" counts as accepted', () => {
+  assert.equal(mapOnRentStatus('Active', 'Order'), 'accepted');
+});
+
+test('Current RMS: a Quotation on "Provisional" is only quoted', () => {
+  assert.equal(mapOnRentStatus('Provisional', 'Quotation'), 'quoted');
+});
+
+test('Current RMS: a Draft on "Open" is a new enquiry, not accepted work', () => {
+  // Same sub-status as a confirmed Order, opposite end of the pipeline. This is
+  // why the state has to decide rather than the status.
+  assert.equal(mapOnRentStatus('Open', 'Draft'), 'new_enquiry');
+});
+
+test('Current RMS: "Open" alone, with no state, stays unknown', () => {
+  assert.equal(mapOnRentStatus('Open', undefined), undefined);
+});
+
+test('Current RMS: a cancelled order is not accepted, whichever field says so', () => {
+  assert.equal(mapOnRentStatus('Open', 'Cancelled'), 'not_accepted');
+  assert.equal(mapOnRentStatus('Cancelled', 'Order'), 'not_accepted');
+});
+
+test('Current RMS: a completed order reads as completed, not merely accepted', () => {
+  assert.equal(mapOnRentStatus('Completed', 'Order'), 'completed');
+});
+
+test('Current RMS: nothing at all maps to nothing', () => {
+  assert.equal(mapOnRentStatus(undefined, undefined), undefined);
+  assert.equal(mapOnRentStatus('', ''), undefined);
 });
