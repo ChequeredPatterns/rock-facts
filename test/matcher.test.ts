@@ -179,7 +179,7 @@ test('records from four systems collapse into one job', () => {
       externalId: 'ct1',
       ref: 'RF-1042',
       clientName: 'Smith',
-      crew: [{ id: 'u1', name: 'Ethan', confirmed: true, source: 'connecteam' }],
+      crew: [{ id: 'u1', name: 'Sam', confirmed: true, source: 'connecteam' }],
     },
   ]);
 
@@ -294,8 +294,8 @@ test('fully staffed, fully tracked jobs raise nothing', () => {
     eventStart: '2026-03-03T09:00:00Z',
     crewRequired: 2,
     crew: [
-      { id: 'a', name: 'Ethan', confirmed: true, source: 'connecteam' },
-      { id: 'b', name: 'Tom', confirmed: true, source: 'connecteam' },
+      { id: 'a', name: 'Sam', confirmed: true, source: 'connecteam' },
+      { id: 'b', name: 'Alex', confirmed: true, source: 'connecteam' },
     ],
     sources: [
       { system: 'streak', externalId: 's1', lastActivityAt: '2026-02-28T00:00:00Z' },
@@ -313,8 +313,8 @@ test('unconfirmed crew still count as a shortfall', () => {
     eventStart: '2026-03-03T09:00:00Z',
     crewRequired: 2,
     crew: [
-      { id: 'a', name: 'Ethan', confirmed: true, source: 'connecteam' },
-      { id: 'b', name: 'Tom', confirmed: false, source: 'connecteam' },
+      { id: 'a', name: 'Sam', confirmed: true, source: 'connecteam' },
+      { id: 'b', name: 'Alex', confirmed: false, source: 'connecteam' },
     ],
     sources: [{ system: 'streak', externalId: 's1' }, { system: 'calendar', externalId: 'c1' }],
   });

@@ -6,13 +6,12 @@
  * purely to let the team see and critique the interface before the account
  * owner spends time on credentials.
  *
- * Crew names mirror the per-person calendars already in the Google account
- * (Ethan, John, Seb, Tom) so the layout is tested against realistic shapes.
+ * Crew names here are invented placeholders, not real people.
  */
 
 import { businessDateParts, businessInstant, type Job } from './domain';
 
-const CREW = ['Ethan', 'John', 'Seb', 'Tom'];
+const CREW = ['Sam', 'Alex', 'Jo', 'Riley'];
 
 /**
  * An instant whose Auckland wall-clock time is `hour:00`, `dayOffset` days
@@ -42,8 +41,8 @@ export function sampleJobs(now: Date = new Date()): Job[] {
       venue: 'Shed 10, Queens Wharf',
       quoteTotal: 4850,
       crew: [
-        { id: 'c1', name: 'Ethan', role: 'Sound', confirmed: true, source: 'connecteam' },
-        { id: 'c2', name: 'Seb', role: 'Lighting', confirmed: true, source: 'connecteam' },
+        { id: 'c1', name: 'Sam', role: 'Sound', confirmed: true, source: 'connecteam' },
+        { id: 'c2', name: 'Jo', role: 'Lighting', confirmed: true, source: 'connecteam' },
       ],
       crewRequired: 4,
       sources: [
@@ -113,9 +112,9 @@ export function sampleJobs(now: Date = new Date()): Job[] {
       venue: 'Western Springs',
       quoteTotal: 8750,
       crew: [
-        { id: 'c3', name: 'Tom', role: 'Crew chief', confirmed: true, source: 'connecteam' },
-        { id: 'c4', name: 'John', role: 'Stage', confirmed: false, source: 'connecteam' },
-        { id: 'c5', name: 'Ethan', role: 'Sound', confirmed: true, source: 'connecteam' },
+        { id: 'c3', name: 'Alex', role: 'Crew chief', confirmed: true, source: 'connecteam' },
+        { id: 'c4', name: 'Riley', role: 'Stage', confirmed: false, source: 'connecteam' },
+        { id: 'c5', name: 'Sam', role: 'Sound', confirmed: true, source: 'connecteam' },
       ],
       crewRequired: 3,
       sources: [
@@ -133,7 +132,7 @@ export function sampleJobs(now: Date = new Date()): Job[] {
       eventStart: at(now, 8, 16),
       eventEnd: at(now, 8, 22),
       venue: 'Britomart',
-      crew: [{ id: 'c6', name: 'Seb', confirmed: false, source: 'calendar' }],
+      crew: [{ id: 'c6', name: 'Jo', confirmed: false, source: 'calendar' }],
       sources: [{ system: 'calendar', externalId: 'cal6', lastActivityAt: daysAgo(now, 4) }],
       matchConfidence: 'exact',
     },
@@ -158,8 +157,8 @@ export function sampleJobs(now: Date = new Date()): Job[] {
       venue: 'Viaduct Events Centre',
       quoteTotal: 15600,
       crew: [
-        { id: 'c7', name: 'Tom', confirmed: true, source: 'connecteam' },
-        { id: 'c8', name: 'John', confirmed: true, source: 'connecteam' },
+        { id: 'c7', name: 'Alex', confirmed: true, source: 'connecteam' },
+        { id: 'c8', name: 'Riley', confirmed: true, source: 'connecteam' },
       ],
       crewRequired: 2,
       sources: [

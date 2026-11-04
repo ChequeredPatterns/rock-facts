@@ -5,55 +5,85 @@ installing anything, and nothing to break. Every step is filling in a web form.
 
 ---
 
-## Part 1 — The one thing that needs the boss (about 4 minutes)
+## Part 0 — Put it online first (10 minutes)
 
-Only Google genuinely needs the account owner, because it is her Google account
-that holds the calendars and the mail. Everything else can be done by anyone
-with admin access to the product.
+This has to come first now, because the Google sign-in needs a web address to
+return to.
 
-**Do this part while sitting with her. It is one screen.**
+1. Go to <https://vercel.com/new> and sign in with GitHub.
+2. Import the `rock-facts` repository.
+3. Click **Deploy**. Add no settings yet.
 
-Rock Factory Central asks for **read-only** access. It can never send an email,
-change a calendar, or delete anything. That is worth saying out loud, because
-it is usually the thing that makes someone hesitate.
+You will get an address like `https://rock-facts.vercel.app`. Open it — the
+dashboard works immediately on clearly-labelled sample data. **Write this
+address down**; the next part needs it.
 
-### What she actually has to do
+---
+
+## Part 1 — Google (the only step needing the account owner)
+
+Rock Factory Central asks for **read-only** access. It cannot send email,
+change a calendar, or delete anything. Say that up front — it is usually the
+thing that makes someone hesitate.
+
+> **Which Google account?** Sign in as the account that actually holds the
+> business calendars and mail. A brand-new empty account will connect
+> perfectly and then show an empty timeline, which looks like a fault but is
+> not. The Cloud project in steps 1–6 can be owned by any account you like;
+> only the sign-in in step 9 has to be the one with the data.
+
+### Steps 1–6: create the credentials (anyone can do this)
 
 1. Go to <https://console.cloud.google.com/projectcreate>
 2. Project name: `Rock Factory Central`. Click **Create**.
 3. In the search bar at the top, search **Google Calendar API**, open it, click
    **Enable**. Do the same for **Gmail API**.
-4. Search for **OAuth consent screen** in the top search bar.
+4. Search for **OAuth consent screen**.
    - User type: **Internal** if you have Google Workspace, otherwise **External**
    - App name: `Rock Factory Central`
-   - Support email: hers
-   - Click through the rest, accepting defaults, then **Back to dashboard**
+   - Support email: yours
+   - Click through the rest accepting defaults
 5. Go to **Credentials** → **Create credentials** → **OAuth client ID**
    - Application type: **Web application**
-   - Authorised redirect URI: `https://developers.google.com/oauthplayground`
-   - Click **Create**
-6. A box appears with a **Client ID** and a **Client secret**.
-   **Copy both and send them to whoever is setting this up.**
+   - Under **Authorised redirect URIs**, click Add and paste your address from
+     Part 0 with `/api/auth/google/callback` on the end, exactly like this:
 
-That is her part finished. She does not need to be present for anything else.
+     ```
+     https://your-address.vercel.app/api/auth/google/callback
+     ```
 
-### Then (anyone can do this bit)
+     It must match exactly — `https`, no trailing slash. A mismatch here is the
+     single most common failure, and the app will tell you if it happens.
+6. Click **Create**. Copy the **Client ID** and **Client secret**.
 
-7. Go to <https://developers.google.com/oauthplayground>
-8. Click the gear icon (top right) → tick **Use your own OAuth credentials** →
-   paste the Client ID and Client secret.
-9. In the left-hand list, paste these two scopes into the
-   "Input your own scopes" box, one at a time:
-   - `https://www.googleapis.com/auth/calendar.readonly`
-   - `https://www.googleapis.com/auth/gmail.readonly`
-10. Click **Authorise APIs**, sign in **as the boss's account** (she may need
-    to type her password here — this is the only other moment she is needed,
-    and it is 10 seconds).
-11. Click **Exchange authorisation code for tokens**.
-12. Copy the **Refresh token**. It is a long string starting with `1//`.
+### Steps 7–8: save them
 
-You now have the three Google values:
-`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN`.
+7. On Vercel: **Settings** → **Environment Variables**. Add:
+   - `GOOGLE_CLIENT_ID`
+   - `GOOGLE_CLIENT_SECRET`
+8. **Deployments** → **Redeploy**.
+
+### Steps 9–11: the sign-in (30 seconds, needs the account owner)
+
+9. Visit `https://your-address.vercel.app/setup` and click
+   **Sign in with Google**.
+10. Sign in **as the account holding the business calendars** and approve.
+11. The page shows a **refresh token**. Add it on Vercel as
+    `GOOGLE_REFRESH_TOKEN`, then **Redeploy**.
+
+That token is a password in all but name — it grants read access to that
+account's calendar and mail. Don't email it or paste it into a chat. The page
+deliberately isn't cached, so close it once saved.
+
+### Step 12: choose the calendars
+
+Go back to `/setup`. It now lists every calendar the account can see, each with
+its ID. Copy the IDs of the ones holding client events into a Vercel variable
+called `GOOGLE_EVENT_CALENDAR_IDS`, separated by commas, and redeploy.
+
+Optionally add `GOOGLE_CREW_CALENDARS` as `Name=calendarId` pairs if you keep a
+calendar per crew member — it lets the dashboard show who is working even
+before Connecteam is connected.
 
 ---
 

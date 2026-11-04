@@ -118,10 +118,14 @@ export interface CalendarSelection {
 /**
  * Read the calendar selection from config.
  *
- * The Rock Factory's Google account already has a "1. Live Event" calendar
- * plus one calendar per crew member ("GSR - Ethan", "GSR - Tom", ...). That
- * existing structure is used directly: event calendars give us jobs, crew
- * calendars give us a secondary read on who is working.
+ * Two kinds of calendar are supported, matching how an events business
+ * normally organises them: one or more shared calendars holding the client
+ * events themselves, and optionally one calendar per crew member. Event
+ * calendars give us jobs; crew calendars give a secondary read on who is
+ * working, used when Connecteam is not connected.
+ *
+ * The Setup page lists the connected account's calendars and their IDs, so
+ * these do not have to be looked up by hand.
  */
 export function calendarSelection(): CalendarSelection {
   const eventIds = (process.env.GOOGLE_EVENT_CALENDAR_IDS ?? '')
@@ -141,6 +145,39 @@ export function calendarSelection(): CalendarSelection {
     .filter((v): v is { id: string; name: string } => v !== null);
 
   return { eventCalendarIds: eventIds, crewCalendars: crew };
+}
+
+export interface CalendarSummary {
+  id: string;
+  name: string;
+  primary: boolean;
+}
+
+/**
+ * Every calendar the connected account can see, for the Setup page.
+ *
+ * This exists so nobody has to dig calendar IDs out of Google's settings by
+ * hand — the Setup page shows the list with each ID ready to copy.
+ */
+export async function listCalendars(): Promise<CalendarSummary[]> {
+  const token = await getAccessToken();
+  const res = await fetch(`${CALENDAR_BASE}/users/me/calendarList?maxResults=250`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`Could not list calendars (${res.status}). ${body.slice(0, 160)}`);
+  }
+  const json = (await res.json()) as {
+    items?: { id?: string; summary?: string; primary?: boolean }[];
+  };
+  return (json.items ?? [])
+    .filter((c): c is { id: string; summary?: string; primary?: boolean } => Boolean(c.id))
+    .map((c) => ({
+      id: c.id,
+      name: c.summary ?? c.id,
+      primary: Boolean(c.primary),
+    }));
 }
 
 async function listEvents(

@@ -9,11 +9,38 @@
 import { getDashboard } from '@/lib/data';
 import { SYSTEMS, isConfigured, missingEnv } from '@/lib/config';
 import { SYSTEM_LABELS } from '@/lib/domain';
+import { listCalendars, type CalendarSummary } from '@/lib/connectors/google';
 
 export const dynamic = 'force-dynamic';
 
+/** Google sign-in state, which drives what the top of this page offers. */
+type GoogleStage = 'no-credentials' | 'ready-to-connect' | 'connected';
+
+function googleStage(): GoogleStage {
+  const hasApp = Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
+  if (!hasApp) return 'no-credentials';
+  return process.env.GOOGLE_REFRESH_TOKEN ? 'connected' : 'ready-to-connect';
+}
+
 export default async function SetupPage() {
   const data = await getDashboard();
+  const stage = googleStage();
+
+  // Once connected, show the calendars so nobody has to hunt for IDs.
+  let calendars: CalendarSummary[] | null = null;
+  let calendarError: string | null = null;
+  if (stage === 'connected') {
+    try {
+      calendars = await listCalendars();
+    } catch (err) {
+      calendarError = err instanceof Error ? err.message : 'Could not read calendars.';
+    }
+  }
+
+  const chosen = (process.env.GOOGLE_EVENT_CALENDAR_IDS ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
 
   return (
     <>
@@ -24,6 +51,64 @@ export default async function SetupPage() {
           connection is a key or sign-in pasted into the hosting dashboard.
         </p>
       </div>
+
+      {/* --- Google sign-in, the one step that needs the account owner --- */}
+      {stage === 'ready-to-connect' ? (
+        <section className="system" style={{ borderColor: 'rgba(61,219,245,.4)' }}>
+          <div className="system-head">
+            <h2>Connect Google</h2>
+            <span className="chip accent">Ready</span>
+          </div>
+          <p>
+            One click, one sign-in screen. Rock Factory Central asks for <strong>read-only</strong>{' '}
+            access — it can never send email, change a calendar, or delete anything.
+          </p>
+          <p style={{ marginTop: 14 }}>
+            <a className="btn" href="/api/auth/google">
+              Sign in with Google →
+            </a>
+          </p>
+        </section>
+      ) : null}
+
+      {stage === 'connected' && calendars ? (
+        <section className="system connected">
+          <div className="system-head">
+            <h2>Your calendars</h2>
+            <span className="chip ok">{calendars.length} found</span>
+          </div>
+          <p>
+            Copy the IDs of the calendars holding client events into{' '}
+            <code>GOOGLE_EVENT_CALENDAR_IDS</code>, separated by commas. Ticks show which are
+            currently in use.
+          </p>
+          <ul className="cal-list">
+            {calendars.map((c) => (
+              <li key={c.id} className={chosen.includes(c.id) ? 'cal in-use' : 'cal'}>
+                <span className="cal-name">
+                  {chosen.includes(c.id) ? '✓ ' : ''}
+                  {c.name}
+                </span>
+                <code>{c.id}</code>
+              </li>
+            ))}
+          </ul>
+          {chosen.length === 0 ? (
+            <p style={{ color: 'var(--soon)' }}>
+              No calendars selected yet, so the timeline will be empty. Pick at least one above.
+            </p>
+          ) : null}
+        </section>
+      ) : null}
+
+      {calendarError ? (
+        <div className="banner problem">
+          <div>
+            <strong>Could not read calendars</strong>
+            <p>{calendarError}</p>
+          </div>
+        </div>
+      ) : null}
 
       {data.isSample ? (
         <div className="banner sample">
