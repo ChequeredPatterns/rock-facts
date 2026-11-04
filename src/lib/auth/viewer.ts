@@ -33,8 +33,46 @@ export const SESSION_TTL_SECONDS = 60 * 60 * 24 * 14;
  */
 function sessionSecret(): string | null {
   return (
-    process.env.SESSION_SECRET?.trim() || process.env.GOOGLE_CLIENT_SECRET?.trim() || null
+    process.env.SESSION_SECRET?.trim() ||
+    process.env.GOOGLE_CLIENT_SECRET?.trim() ||
+    // Last resort for a password-only deployment with no Google app yet.
+    // Deriving the signing key from the password means changing the password
+    // also signs everyone out, which is the behaviour you want. It is the
+    // weakest of the three though — a short password makes a weak signing key
+    // — so `SESSION_SECRET` is worth setting. The Setup page says so.
+    (process.env.SITE_PASSWORD?.trim() ? `pw:${process.env.SITE_PASSWORD.trim()}` : null)
   );
+}
+
+/** The shared password, if one is configured. */
+export function sitePassword(): string | null {
+  const p = process.env.SITE_PASSWORD?.trim();
+  return p ? p : null;
+}
+
+export function passwordLoginEnabled(): boolean {
+  return sitePassword() !== null;
+}
+
+/** True when the signing key is only as strong as the password itself. */
+export function sessionSecretIsWeak(): boolean {
+  return (
+    !process.env.SESSION_SECRET?.trim() &&
+    !process.env.GOOGLE_CLIENT_SECRET?.trim() &&
+    passwordLoginEnabled()
+  );
+}
+
+/**
+ * Check a submitted password.
+ *
+ * Compared in constant time so the answer cannot be built up a character at a
+ * time from response timing.
+ */
+export function passwordMatches(submitted: string | undefined): boolean {
+  const expected = sitePassword();
+  if (!expected || typeof submitted !== 'string') return false;
+  return constantTimeEqual(submitted, expected);
 }
 
 function b64urlEncode(bytes: Uint8Array): string {
@@ -69,16 +107,26 @@ function constantTimeEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
+/** How someone proved they were allowed in. */
+export type ViewerVia = 'google' | 'password';
+
 export interface ViewerSession {
+  /** The Google address, or 'password' for a shared-password sign-in. */
   email: string;
+  via: ViewerVia;
   exp: number;
 }
 
-export async function signSession(email: string, now = Date.now()): Promise<string | null> {
+export async function signSession(
+  email: string,
+  via: ViewerVia = 'google',
+  now = Date.now(),
+): Promise<string | null> {
   const secret = sessionSecret();
   if (!secret) return null;
   const payload: ViewerSession = {
     email: email.toLowerCase(),
+    via,
     exp: Math.floor(now / 1000) + SESSION_TTL_SECONDS,
   };
   const body = b64urlEncode(new TextEncoder().encode(JSON.stringify(payload)));
@@ -107,10 +155,16 @@ export async function verifySession(
     const parsed = JSON.parse(new TextDecoder().decode(b64urlDecode(body))) as ViewerSession;
     if (typeof parsed?.email !== 'string' || typeof parsed?.exp !== 'number') return null;
     if (parsed.exp * 1000 <= now) return null;
-    // Re-check the allowlist on every request, so removing someone takes
-    // effect immediately rather than whenever their cookie happens to lapse.
-    if (!isAllowedViewer(parsed.email)) return null;
-    return parsed;
+
+    // Each method is re-checked on every request, not just at sign-in.
+    if (parsed.via === 'password') {
+      // Turning the password off must evict everyone who used it, rather than
+      // leaving valid sessions behind for up to a fortnight.
+      return passwordLoginEnabled() ? parsed : null;
+    }
+    // Removing someone from the allowlist takes effect on their next page
+    // load, rather than whenever their cookie happens to lapse.
+    return isAllowedViewer(parsed.email) ? parsed : null;
   } catch {
     return null;
   }
@@ -147,7 +201,7 @@ export function isAllowedViewer(email: string | undefined): boolean {
 }
 
 /** True once there is a Google app to sign in against and someone to admit. */
-export function canSignIn(): boolean {
+export function canSignInWithGoogle(): boolean {
   const { emails, domains } = allowedViewers();
   return Boolean(
     process.env.GOOGLE_CLIENT_ID?.trim() &&
@@ -155,6 +209,12 @@ export function canSignIn(): boolean {
       sessionSecret() &&
       (emails.length > 0 || domains.length > 0),
   );
+}
+
+/** Any working way in at all. */
+export function canSignIn(): boolean {
+  if (passwordLoginEnabled() && sessionSecret()) return true;
+  return canSignInWithGoogle();
 }
 
 /**

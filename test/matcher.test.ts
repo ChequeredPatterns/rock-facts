@@ -12,6 +12,7 @@ import { mapOnRentStatus } from '../src/lib/connectors/onrent';
 import {
   gateMode,
   isAllowedViewer,
+  passwordMatches,
   signSession,
   verifySession,
 } from '../src/lib/auth/viewer';
@@ -479,6 +480,7 @@ const NO_CREDS = {
   SESSION_SECRET: undefined,
   ALLOWED_EMAILS: undefined,
   ALLOWED_EMAIL_DOMAINS: undefined,
+  SITE_PASSWORD: undefined,
 };
 
 test('no allowlist admits nobody, rather than everybody', () => {
@@ -566,7 +568,7 @@ test('an expired session is rejected', async () => {
   await withEnv(
     { ...NO_CREDS, GOOGLE_CLIENT_SECRET: 'signing-key', ALLOWED_EMAILS: 'boss@example.com' },
     async () => {
-      const token = await signSession('boss@example.com', Date.now());
+      const token = await signSession('boss@example.com', 'google', Date.now());
       // Fifteen days later, past the fourteen-day life.
       assert.equal(await verifySession(token!, Date.now() + 15 * 86400_000), null);
     },
@@ -595,6 +597,84 @@ test('removing someone from the allowlist invalidates their existing session', a
     { ...NO_CREDS, GOOGLE_CLIENT_SECRET: 'k', ALLOWED_EMAILS: 'boss@example.com' },
     async () => {
       assert.equal(await verifySession((await token) ?? undefined), null);
+    },
+  );
+});
+
+// --- Shared-password sign-in -----------------------------------------------
+// A short shared password is the weakest of the options offered, so these
+// cover the ways it must not fail open.
+
+test('the password is compared exactly, and nothing else is accepted', () => {
+  withEnv({ ...NO_CREDS, SITE_PASSWORD: 'Tr0mbone-Str4w' }, () => {
+    assert.equal(passwordMatches('Tr0mbone-Str4w'), true);
+    assert.equal(passwordMatches('tr0mbone-str4w'), false, 'must be case-sensitive');
+    assert.equal(passwordMatches('Tr0mbone-Str4w '), false, 'no trailing whitespace');
+    assert.equal(passwordMatches(' Tr0mbone-Str4w'), false, 'no leading whitespace');
+    assert.equal(passwordMatches('Tr0mbone-Str4'), false, 'a prefix is not enough');
+    assert.equal(passwordMatches('Tr0mbone-Str4ww'), false, 'nor is a longer string');
+    assert.equal(passwordMatches(''), false);
+    assert.equal(passwordMatches(undefined), false);
+  });
+});
+
+test('with no password configured, nothing is accepted — including empty', () => {
+  withEnv({ ...NO_CREDS }, () => {
+    assert.equal(passwordMatches(''), false);
+    assert.equal(passwordMatches(undefined), false);
+    assert.equal(passwordMatches('anything'), false);
+  });
+});
+
+test('a password alone is enough to unlock the gate', () => {
+  withEnv({ ...NO_CREDS, ONRENT_API_KEY: 'x', SITE_PASSWORD: 'Tr0mbone-Str4w' }, () => {
+    assert.equal(gateMode(), 'enforced');
+  });
+});
+
+test('a password session round-trips', async () => {
+  await withEnv({ ...NO_CREDS, SITE_PASSWORD: 'Tr0mbone-Str4w' }, async () => {
+    const token = await signSession('password', 'password');
+    const session = await verifySession(token ?? undefined);
+    assert.equal(session?.via, 'password');
+  });
+});
+
+test('turning the password off evicts everyone who used it', async () => {
+  const token = await withEnv({ ...NO_CREDS, SITE_PASSWORD: 'Tr0mbone-Str4w' }, async () =>
+    signSession('password', 'password'),
+  );
+  await withEnv({ ...NO_CREDS, SESSION_SECRET: 'unchanged-key' }, async () => {
+    assert.equal(await verifySession((await token) ?? undefined), null);
+  });
+});
+
+test('changing the password signs existing sessions out', async () => {
+  const token = await withEnv({ ...NO_CREDS, SITE_PASSWORD: 'Tr0mbone-Str4w' }, async () =>
+    signSession('password', 'password'),
+  );
+  await withEnv({ ...NO_CREDS, SITE_PASSWORD: 'An0ther-Pass' }, async () => {
+    assert.equal(await verifySession((await token) ?? undefined), null);
+  });
+});
+
+test('a password session cannot be re-labelled as a Google one', async () => {
+  // The `via` field is inside the signed payload, so switching it should
+  // break the signature rather than smuggle someone past the allowlist.
+  await withEnv(
+    { ...NO_CREDS, SITE_PASSWORD: 'Tr0mbone-Str4w', ALLOWED_EMAILS: 'boss@example.com' },
+    async () => {
+      const token = await signSession('password', 'password');
+      const [body, tag] = token!.split('.');
+      const swapped = Buffer.from(
+        JSON.stringify({
+          email: 'boss@example.com',
+          via: 'google',
+          exp: Math.floor(Date.now() / 1000) + 999,
+        }),
+      ).toString('base64url');
+      assert.notEqual(body, swapped);
+      assert.equal(await verifySession(`${swapped}.${tag}`), null);
     },
   );
 });

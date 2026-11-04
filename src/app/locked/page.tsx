@@ -18,10 +18,19 @@ export default async function LockedPage() {
   const loginUri = redirectUriFromHeaders(h).replace('/api/auth/google/callback', LOGIN_CALLBACK_PATH);
 
   const { emails, domains } = allowedViewers();
+  // Either route in is enough, so only report what the simpler one needs
+  // unless the Google route is already half-configured.
+  const googleStarted = Boolean(
+    process.env.GOOGLE_CLIENT_ID?.trim() || emails.length > 0 || domains.length > 0,
+  );
   const missing: string[] = [];
-  if (!process.env.GOOGLE_CLIENT_ID?.trim()) missing.push('GOOGLE_CLIENT_ID');
-  if (!process.env.GOOGLE_CLIENT_SECRET?.trim()) missing.push('GOOGLE_CLIENT_SECRET');
-  if (emails.length === 0 && domains.length === 0) missing.push('ALLOWED_EMAILS');
+  if (!googleStarted) {
+    missing.push('SITE_PASSWORD');
+  } else {
+    if (!process.env.GOOGLE_CLIENT_ID?.trim()) missing.push('GOOGLE_CLIENT_ID');
+    if (!process.env.GOOGLE_CLIENT_SECRET?.trim()) missing.push('GOOGLE_CLIENT_SECRET');
+    if (emails.length === 0 && domains.length === 0) missing.push('ALLOWED_EMAILS');
+  }
 
   return (
     <div style={{ maxWidth: 620, margin: '10vh auto 0' }}>
@@ -47,19 +56,29 @@ export default async function LockedPage() {
               </li>
             ))}
           </ul>
-          <p style={{ marginTop: 14 }}>
-            <code>ALLOWED_EMAILS</code> is a comma-separated list of the Google addresses
-            permitted to view this. <code>ALLOWED_EMAIL_DOMAINS</code> may be used instead
-            to admit a whole work domain.
-          </p>
-          <p style={{ marginTop: 14 }}>
-            The OAuth client also needs this address among its{' '}
-            <strong>Authorised redirect URIs</strong>, alongside the one used to connect
-            Google:
-          </p>
-          <p>
-            <code>{loginUri}</code>
-          </p>
+          {missing.includes('SITE_PASSWORD') ? (
+            <p style={{ marginTop: 14 }}>
+              <code>SITE_PASSWORD</code> is a single shared password everyone types to get
+              in. Alternatively, set <code>ALLOWED_EMAILS</code> together with the Google
+              credentials to use a per-person Google sign-in instead.
+            </p>
+          ) : (
+            <>
+              <p style={{ marginTop: 14 }}>
+                <code>ALLOWED_EMAILS</code> is a comma-separated list of the Google
+                addresses permitted to view this. <code>ALLOWED_EMAIL_DOMAINS</code> may be
+                used instead to admit a whole work domain.
+              </p>
+              <p style={{ marginTop: 14 }}>
+                The OAuth client also needs this address among its{' '}
+                <strong>Authorised redirect URIs</strong>, alongside the one used to connect
+                Google:
+              </p>
+              <p>
+                <code>{loginUri}</code>
+              </p>
+            </>
+          )}
           <p style={{ marginTop: 14, color: 'var(--soon)' }}>
             Then trigger a deploy. If you would rather take the dashboard offline instead,
             remove the connector keys and it reverts to sample data.

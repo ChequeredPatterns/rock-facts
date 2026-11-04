@@ -9,7 +9,13 @@
 import { headers } from 'next/headers';
 import { getDashboard } from '@/lib/data';
 import { CALLBACK_PATH, redirectUriFromHeaders } from '@/lib/connectors/google-oauth';
-import { LOGIN_CALLBACK_PATH, allowedViewers, gateMode } from '@/lib/auth/viewer';
+import {
+  LOGIN_CALLBACK_PATH,
+  allowedViewers,
+  gateMode,
+  passwordLoginEnabled,
+  sessionSecretIsWeak,
+} from '@/lib/auth/viewer';
 import { SYSTEMS, isConfigured, missingEnv } from '@/lib/config';
 import { SYSTEM_LABELS } from '@/lib/domain';
 import { listCalendars, type CalendarSummary } from '@/lib/connectors/google';
@@ -75,6 +81,8 @@ export default async function SetupPage() {
 
   const gate = gateMode();
   const viewers = allowedViewers();
+  const passwordMode = passwordLoginEnabled();
+  const weakSigningKey = sessionSecretIsWeak();
 
   return (
     <>
@@ -105,35 +113,66 @@ export default async function SetupPage() {
             No connector keys are set, so the dashboard holds nothing but sample data and
             anyone with the address can read it. <strong>The moment a real key is added
             the gate turns itself on</strong>, so live client data is never served to the
-            open internet. Set <code>ALLOWED_EMAILS</code> before adding those keys, or the
-            site will lock itself instead.
+            open internet. Set <code>SITE_PASSWORD</code> (or <code>ALLOWED_EMAILS</code>)
+            before adding those keys, or the site will lock itself instead.
           </p>
         ) : gate === 'locked' ? (
           <p style={{ color: 'var(--urgent)' }}>
             Real data is configured but nobody can sign in, so the whole site is closed.
-            Add <code>GOOGLE_CLIENT_ID</code>, <code>GOOGLE_CLIENT_SECRET</code> and{' '}
-            <code>ALLOWED_EMAILS</code> to reopen it.
+            Add <code>SITE_PASSWORD</code> to reopen it — or{' '}
+            <code>GOOGLE_CLIENT_ID</code>, <code>GOOGLE_CLIENT_SECRET</code> and{' '}
+            <code>ALLOWED_EMAILS</code> for a per-person Google sign-in.
           </p>
         ) : (
           <>
-            <p>
-              The dashboard is private. Only these Google accounts can open it, and a
-              sign-in lasts fourteen days. Removing an address here locks that person out
-              immediately, without waiting for their session to lapse.
-            </p>
-            <ul className="cal-list">
-              {viewers.emails.map((e) => (
-                <li key={e} className="cal">
-                  <span className="cal-name">{e}</span>
-                </li>
-              ))}
-              {viewers.domains.map((d) => (
-                <li key={d} className="cal">
-                  <span className="cal-name">Anyone at</span>
-                  <code>@{d}</code>
-                </li>
-              ))}
-            </ul>
+            {passwordMode ? (
+              <p>
+                The dashboard is private. Anyone who knows the shared password set in{' '}
+                <code>SITE_PASSWORD</code> can open it, and a sign-in lasts fourteen days.
+                Changing that value signs everyone out at once. Repeated wrong guesses from
+                one address are locked out for fifteen minutes.
+              </p>
+            ) : (
+              <p>
+                The dashboard is private. Only these Google accounts can open it, and a
+                sign-in lasts fourteen days. Removing an address here locks that person out
+                immediately, without waiting for their session to lapse.
+              </p>
+            )}
+
+            {viewers.emails.length > 0 || viewers.domains.length > 0 ? (
+              <ul className="cal-list">
+                {viewers.emails.map((e) => (
+                  <li key={e} className="cal">
+                    <span className="cal-name">{e}</span>
+                  </li>
+                ))}
+                {viewers.domains.map((d) => (
+                  <li key={d} className="cal">
+                    <span className="cal-name">Anyone at</span>
+                    <code>@{d}</code>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+
+            {weakSigningKey ? (
+              <p style={{ marginTop: 14, color: 'var(--soon)' }}>
+                Session cookies are currently signed with the password itself, because no{' '}
+                <code>SESSION_SECRET</code> or Google client secret is set. Setting{' '}
+                <code>SESSION_SECRET</code> to any long random string is worth doing: it
+                makes a forged cookie infeasible regardless of how short the password is.
+              </p>
+            ) : null}
+
+            {passwordMode ? (
+              <p style={{ marginTop: 14, color: 'var(--text-faint)' }}>
+                A shared password cannot tell you who looked, and it has to be changed for
+                everyone when one person should lose access. Setting{' '}
+                <code>ALLOWED_EMAILS</code> switches this to a per-person Google sign-in,
+                which has neither problem.
+              </p>
+            ) : null}
           </>
         )}
       </section>

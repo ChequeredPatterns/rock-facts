@@ -14,7 +14,13 @@ import { SESSION_COOKIE, gateMode, verifySession } from '@/lib/auth/viewer';
  * Paths that must stay reachable without a session, or signing in would be
  * impossible. Kept deliberately short — everything else is behind the gate.
  */
-const PUBLIC_PATHS = ['/login', '/api/auth/login', '/api/auth/login/callback', '/locked'];
+const PUBLIC_PATHS = [
+  '/login',
+  '/api/auth/login',
+  '/api/auth/login/callback',
+  '/api/auth/password',
+  '/locked',
+];
 
 function isPublic(pathname: string): boolean {
   return PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));

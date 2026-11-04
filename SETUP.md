@@ -54,8 +54,8 @@ protection is a paid plan, and this does a better job anyway.
 | What is configured | What the site does |
 |---|---|
 | No connector keys | Open. Sample data only, so nothing to protect |
-| Any real key, nobody allowed in | **Locks completely** |
-| Any real key, people allowed in | Google sign-in required |
+| Any real key, no way in configured | **Locks completely** |
+| Any real key, a way in configured | Sign-in required |
 
 The middle row is deliberate. The gate switches on the instant a credential
 appears, so there is never a window where live client data sits on the open
@@ -63,7 +63,28 @@ internet because the login had not been set up yet. If it cannot let anyone
 in at that moment it closes instead — staff being locked out is recoverable
 and obvious; the whole internet being let in is neither.
 
-**So set this first.** On Netlify, add:
+**So set this first.** There are two ways in. Pick one.
+
+### Option A — a shared password (simplest)
+
+On Netlify add one variable:
+
+- `SITE_PASSWORD` — the password everyone types
+
+Also add `SESSION_SECRET`, set to any long random string. Without it the
+session cookie is signed using the password itself, so a short password
+means a weak signing key too. With it, cookies cannot be forged regardless.
+
+Repeated wrong guesses from one address are locked out for fifteen minutes
+after eight attempts, which blunts casual guessing. The real protection is
+length: a short password has few combinations and a script can work through
+them quickly. The lockout counters also live in the memory of whichever
+serverless instance answered, so they are a genuine obstacle rather than a
+guarantee.
+
+Changing `SITE_PASSWORD` signs everybody out immediately.
+
+### Option B — per-person Google sign-in (better for a business)
 
 - `ALLOWED_EMAILS` — the Google addresses allowed to view, comma separated,
   e.g. `boss@therockfactory.co.nz,ops@therockfactory.co.nz`
@@ -71,11 +92,17 @@ and obvious; the whole internet being let in is neither.
   `therockfactory.co.nz`, to avoid listing people one by one
 
 Use a domain you control. Never `gmail.com`, which would admit anyone on
-earth with a Google account.
+earth with a Google account. This needs the Google credentials from Part 1
+and the second redirect URI, so it is worth doing once that is set up.
 
-A sign-in lasts fourteen days. Removing someone from `ALLOWED_EMAILS` locks
-them out on their very next page load, without waiting for that to expire —
-which is what you want the day someone leaves.
+A sign-in lasts fourteen days either way. Removing someone from
+`ALLOWED_EMAILS` locks them out on their very next page load, without waiting
+for that to expire — which is what you want the day someone leaves.
+
+**Why B is better eventually:** a shared password cannot tell you who looked
+at anything, and when one person should lose access it has to be changed for
+everyone. Setting `ALLOWED_EMAILS` switches over with no code change; set
+both and the sign-in page offers each.
 
 The **Setup** page states plainly which of the three rows above you are
 currently in, so you never have to guess whether the dashboard is public.

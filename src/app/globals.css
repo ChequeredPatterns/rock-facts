@@ -968,3 +968,38 @@ code {
     transition: none !important;
   }
 }
+
+/* Password field on the sign-in screen. Matches the pill shape of .btn so the
+   form reads as one control, and keeps the generous tap target that matters
+   when this is typed on a phone at a venue. */
+.pw-input {
+  width: 100%;
+  max-width: 280px;
+  font-family: var(--font-mono);
+  font-size: 17px;
+  letter-spacing: 0.22em;
+  text-align: center;
+  padding: 13px 20px;
+  border-radius: 999px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.pw-input::placeholder {
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+}
+
+.pw-input:focus {
+  border-color: rgba(61, 219, 245, 0.55);
+  box-shadow: 0 0 22px rgba(61, 219, 245, 0.22);
+}
+
+/* A button element needs the cursor and border reset that an <a> does not. */
+button.btn {
+  border: 0;
+  cursor: pointer;
+}
