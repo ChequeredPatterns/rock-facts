@@ -198,3 +198,84 @@ RF-1042 Harbourside Weddings
 ...then matching becomes exact, the warnings disappear, and nothing can be
 mismatched or missed. It costs nothing and it is the single highest-value change
 you can make to how the dashboard performs.
+
+---
+
+## Appendix — Running it on your own computer instead
+
+You do not have to use a hosting company. The app runs perfectly well on an
+office computer, and this has been tested. Here is the honest comparison
+before you choose.
+
+### What it costs you
+
+| | Netlify (free) | Your own computer |
+|---|---|---|
+| Money | Free | Free |
+| Setup | Click through a signup | Install Node.js, run a command |
+| Starting it | Always on | Someone starts it; machine must stay awake |
+| Who can see it | Anyone with the link | Only people on the office wifi |
+| On site / at a venue | Works on any phone | Does not work |
+| Getting updates | Automatic when I push | Someone runs `git pull` |
+
+The money argument is gone — both are free — so the real question is whether
+anyone needs the dashboard when they are **not** in the office. For a business
+whose staff are out at venues, "is Saturday crewed?" is usually asked away
+from a desk. That is the deciding factor, not cost.
+
+### One thing worth being clear about
+
+Running locally does **not** keep your business data in-house. The data already
+lives in Google, Streak, On Rent Events and Connecteam — all cloud services.
+This dashboard only reads it. So "local" is about convenience, not privacy.
+
+### If you want to run it locally anyway
+
+1. Install **Node.js 22** from <https://nodejs.org> (the big green button).
+2. Download this project: on the GitHub page, **Code → Download ZIP**, and
+   unzip it.
+3. Open Terminal (Mac) or Command Prompt (Windows) and type `cd ` followed by
+   a space, then drag the unzipped folder onto the window and press Enter.
+4. Run these two commands, one at a time:
+
+```bash
+npm install
+```
+
+```bash
+npm run build
+```
+
+5. Create a file called `.env.local` in that folder and put your keys in it,
+   one per line, using the names from `.env.example`:
+
+```
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
+```
+
+6. Start it:
+
+```bash
+npm start
+```
+
+7. Open <http://localhost:3000>.
+
+**To let others in the office use it**, start it with this instead, then share
+the "Network" address it prints:
+
+```bash
+npx next start -H 0.0.0.0
+```
+
+**For the Google sign-in locally**, register this as the authorised redirect
+URI in Google Cloud Console — Google permits `http` for localhost
+specifically, so this works without a certificate:
+
+```
+http://localhost:3000/api/auth/google/callback
+```
+
+Nothing is lost by starting locally and moving to hosting later. It is the
+same app and the same keys; only the redirect URI changes.
