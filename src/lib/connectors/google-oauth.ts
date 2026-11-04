@@ -25,7 +25,7 @@ export const CALLBACK_PATH = '/api/auth/google/callback';
 /**
  * The externally visible origin of this deployment.
  *
- * `request.url` is the internal URL behind Vercel's proxy, so it can carry
+ * `request.url` is the internal URL behind the host's proxy, so it can carry
  * the wrong host and protocol. The forwarded headers are what the browser
  * actually asked for, and the redirect URI must match them exactly or Google
  * rejects the request.

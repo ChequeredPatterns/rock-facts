@@ -2,11 +2,11 @@
  * Completes the Google sign-in: exchanges the authorisation code for a
  * refresh token and shows it, with instructions for where to paste it.
  *
- * WHY IT SHOWS THE TOKEN RATHER THAN SAVING IT: on Vercel, environment
- * variables are set in the dashboard and are read-only to running code, so a
- * serverless function cannot persist the token itself. Displaying it once,
- * with no-store headers, is the standard pattern — and it still removes every
- * fiddly step of the manual OAuth Playground route.
+ * WHY IT SHOWS THE TOKEN RATHER THAN SAVING IT: on Netlify (and every similar
+ * host) environment variables are set in the dashboard and are read-only to
+ * running code, so a serverless function cannot persist the token itself.
+ * Displaying it once, with no-store headers, is the standard pattern — and it
+ * still removes every fiddly step of the manual OAuth Playground route.
  */
 
 import { cookies } from 'next/headers';
@@ -133,11 +133,13 @@ export async function GET(request: Request) {
      <h2>What to do with it</h2>
      <ol>
        <li>Copy the value above.</li>
-       <li>Go to your project on <a href="https://vercel.com" target="_blank"
-           rel="noreferrer">Vercel</a> → <strong>Settings</strong> →
-           <strong>Environment Variables</strong>.</li>
-       <li>Add it with the name <code>GOOGLE_REFRESH_TOKEN</code>.</li>
-       <li>Go to <strong>Deployments</strong> and click <strong>Redeploy</strong>.</li>
+       <li>Go to your site on <a href="https://app.netlify.com" target="_blank"
+           rel="noreferrer">Netlify</a> → <strong>Site configuration</strong> →
+           <strong>Environment variables</strong>.</li>
+       <li>Click <strong>Add a variable</strong> and name it
+           <code>GOOGLE_REFRESH_TOKEN</code>.</li>
+       <li>Go to <strong>Deploys</strong> → <strong>Trigger deploy</strong> →
+           <strong>Deploy site</strong>.</li>
      </ol>
 
      <div class="warn">

@@ -229,7 +229,7 @@ export function businessOffsetMinutes(at: Date): number {
 /**
  * Build the instant at which the business-local wall clock reads
  * `year-month-day hour:00`. Used wherever we need "3pm in Auckland" rather
- * than "3pm wherever this server happens to be running" — which on Vercel is
+ * than "3pm wherever this server happens to be running" — which on the host is
  * UTC, and would otherwise shift every displayed time by up to 13 hours.
  */
 export function businessInstant(

@@ -5,18 +5,37 @@ installing anything, and nothing to break. Every step is filling in a web form.
 
 ---
 
-## Part 0 — Put it online first (10 minutes)
+## Part 0 — Put it online first (10 minutes, free)
 
-This has to come first now, because the Google sign-in needs a web address to
+This has to come first, because the Google sign-in needs a web address to
 return to.
 
-1. Go to <https://vercel.com/new> and sign in with GitHub.
-2. Import the `rock-facts` repository.
-3. Click **Deploy**. Add no settings yet.
+We use **Netlify**. It is free, and unlike some free hosting plans it permits
+commercial projects, so there is nothing to pay and no terms problem for a
+business tool. No credit card is needed.
 
-You will get an address like `https://rock-facts.vercel.app`. Open it — the
-dashboard works immediately on clearly-labelled sample data. **Write this
-address down**; the next part needs it.
+1. Go to <https://app.netlify.com/signup> and sign up with **GitHub**.
+2. Click **Add new site** → **Import an existing project**.
+3. Choose **GitHub**, allow access, and pick the **`rock-facts`** repository.
+4. **Change nothing.** The build settings are already in the project.
+5. Click **Deploy**.
+
+After a couple of minutes you get an address like
+`https://something-random.netlify.app`.
+
+To make it tidier: **Site configuration → Change site name** and set it to
+something like `rock-factory-central`, giving you
+`https://rock-factory-central.netlify.app`.
+
+**Write that address down** — the next part needs it.
+
+Open it now. The dashboard works immediately on clearly-labelled sample data,
+so you have something real to show people before any keys exist.
+
+> **Where settings go on Netlify:** everywhere below that mentions adding a
+> variable, it means **Site configuration → Environment variables → Add a
+> variable**. After adding any variable, go to **Deploys → Trigger deploy →
+> Deploy site** for it to take effect.
 
 ---
 
@@ -49,7 +68,7 @@ thing that makes someone hesitate.
      Part 0 with `/api/auth/google/callback` on the end, exactly like this:
 
      ```
-     https://your-address.vercel.app/api/auth/google/callback
+     https://your-site.netlify.app/api/auth/google/callback
      ```
 
      It must match exactly — `https`, no trailing slash. A mismatch here is the
@@ -58,18 +77,18 @@ thing that makes someone hesitate.
 
 ### Steps 7–8: save them
 
-7. On Vercel: **Settings** → **Environment Variables**. Add:
+7. On Netlify: **Site configuration** → **Environment variables**. Add:
    - `GOOGLE_CLIENT_ID`
    - `GOOGLE_CLIENT_SECRET`
-8. **Deployments** → **Redeploy**.
+8. **Deploys** → **Trigger deploy** → **Deploy site**.
 
 ### Steps 9–11: the sign-in (30 seconds, needs the account owner)
 
-9. Visit `https://your-address.vercel.app/setup` and click
+9. Visit `https://your-site.netlify.app/setup` and click
    **Sign in with Google**.
 10. Sign in **as the account holding the business calendars** and approve.
-11. The page shows a **refresh token**. Add it on Vercel as
-    `GOOGLE_REFRESH_TOKEN`, then **Redeploy**.
+11. The page shows a **refresh token**. Add it on Netlify as
+    `GOOGLE_REFRESH_TOKEN`, then trigger a deploy.
 
 That token is a password in all but name — it grants read access to that
 account's calendar and mail. Don't email it or paste it into a chat. The page
@@ -78,8 +97,8 @@ deliberately isn't cached, so close it once saved.
 ### Step 12: choose the calendars
 
 Go back to `/setup`. It now lists every calendar the account can see, each with
-its ID. Copy the IDs of the ones holding client events into a Vercel variable
-called `GOOGLE_EVENT_CALENDAR_IDS`, separated by commas, and redeploy.
+its ID. Copy the IDs of the ones holding client events into a variable called
+`GOOGLE_EVENT_CALENDAR_IDS`, separated by commas, and trigger a deploy.
 
 Optionally add `GOOGLE_CREW_CALENDARS` as `Name=calendarId` pairs if you keep a
 calendar per crew member — it lets the dashboard show who is working even
@@ -148,11 +167,11 @@ minutes of work. Everything else is already built around it.
 
 ## Part 5 — Putting the values in (5 minutes, once)
 
-1. Go to your project on <https://vercel.com> → **Settings** →
-   **Environment Variables**.
-2. For each value you collected, add a row: the name on the left, the value on
-   the right. Click **Save**.
-3. Go to the **Deployments** tab and click **Redeploy** on the most recent one.
+1. Go to your site on <https://app.netlify.com> → **Site configuration** →
+   **Environment variables**.
+2. For each value you collected, click **Add a variable**: the name on the
+   left, the value on the right. Save.
+3. Go to **Deploys** → **Trigger deploy** → **Deploy site**.
 
 Names to use are listed in `.env.example`, and the **Setup** page inside the app
 shows you exactly which ones are still missing at any time.

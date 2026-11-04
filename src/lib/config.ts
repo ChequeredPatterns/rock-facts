@@ -1,7 +1,7 @@
 /**
  * Configuration and connection state.
  *
- * Every credential is read from environment variables, which on Vercel are
+ * Every credential is read from environment variables, which on Netlify are
  * entered through a web form — nobody on the team ever edits a file or runs a
  * terminal. Nothing here is exposed to the browser: all values are read in
  * server-side code only, and the UI receives connection *status*, never keys.

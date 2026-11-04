@@ -16,7 +16,7 @@ const CREW = ['Sam', 'Alex', 'Jo', 'Riley'];
 /**
  * An instant whose Auckland wall-clock time is `hour:00`, `dayOffset` days
  * from now. Using setHours() here would resolve the hour in the *server's*
- * timezone — UTC on Vercel — and every sample job would display 12–13 hours
+ * timezone — UTC on the host — and every sample job would display 12–13 hours
  * out, making the sample data look broken.
  */
 function at(now: Date, dayOffset: number, hour: number): string {

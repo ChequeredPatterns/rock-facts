@@ -1,0 +1,32 @@
+# Netlify deployment config.
+#
+# Netlify's free Starter plan permits commercial projects, which Vercel's free
+# Hobby plan does not — that is why this is the default host for this project.
+#
+# Netlify detects Next.js and installs its own Next.js runtime automatically,
+# so nothing beyond this is needed. The app is fully server-rendered (every
+# page is force-dynamic) because it reads live data and keeps API keys
+# server-side; Netlify runs those as serverless functions.
+
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[build.environment]
+  # Match the Node version this project is developed and tested against.
+  NODE_VERSION = "22"
+
+# Security headers. Cheap to add, and this app handles API credentials.
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+
+# The OAuth callback can display a refresh token. Never let it be cached,
+# by the browser or by any proxy in between.
+[[headers]]
+  for = "/api/auth/*"
+  [headers.values]
+    Cache-Control = "no-store, max-age=0"

@@ -141,22 +141,31 @@ Streak stage mapping, the alert rules and timezone handling).
 
 ## Deploying
 
-The app is built for Vercel, which suits a team with no coding experience:
-deploys happen automatically on push, and API keys are entered in a web form
-rather than a file. All vendor calls happen server-side, so no key is ever
-exposed to the browser.
+Deployed to **Netlify**, whose free Starter plan permits commercial projects —
+unlike Vercel's free Hobby plan, which is personal use only. That matters for
+a business tool, so Netlify is the default and `netlify.toml` is committed.
 
-1. Import this repository at <https://vercel.com/new>
-2. Add environment variables (see [SETUP.md](./SETUP.md))
-3. Deploy
+It also suits a team with no coding experience: deploys happen automatically
+on push, and API keys are entered in a web form rather than a file. All vendor
+calls happen server-side, so no key is ever exposed to the browser.
+
+1. Sign up at <https://app.netlify.com/signup> with GitHub
+2. **Add new site** → **Import an existing project** → pick this repository
+3. Change nothing, click **Deploy**
+4. Add environment variables under **Site configuration → Environment
+   variables** (see [SETUP.md](./SETUP.md)), then trigger a deploy
+
+Nothing ties the app to Netlify — it is a standard Next.js app and will run on
+Vercel, Cloudflare Workers (via OpenNext) or any Node host. Only the redirect
+URI registered with Google is host-specific.
 
 ---
 
 ## Timezone
 
 Everything resolves against `Pacific/Auckland`, including daylight saving,
-regardless of where the server runs. Vercel runs in UTC, so this is not
-cosmetic — see `businessInstant()` in `src/lib/domain.ts`.
+regardless of where the server runs. Hosting platforms run in UTC, so this is
+not cosmetic — see `businessInstant()` in `src/lib/domain.ts`.
 
 ---
 
