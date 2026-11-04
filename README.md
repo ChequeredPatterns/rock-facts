@@ -31,18 +31,43 @@ system is connected.
 |---|---|---|
 | Google Calendar | ✅ Built, spec verified | Calendar API v3 is stable and well documented |
 | Gmail | ✅ Built, spec verified | Shares the Google sign-in; metadata only |
-| Streak | ⚠️ Built, **spec unverified** | See below |
+| Streak | ✅ Built, **spec verified** | Verified against the live API 2026-11-04 — see below |
 | Connecteam | ⚠️ Built, **spec unverified** | See below; also check plan gating |
 | On Rent Events | ⛔ Built but disabled | API details unknown — see below |
 
-**Why three are unverified.** The environment this was built in blocks outbound
-network access to `streak.readme.io`, `developer.connecteam.com` and
-`onrentevents.com`, so their documentation could not be read and their APIs
-could not be called. Rather than present guessed endpoint details as verified,
-each of those connectors keeps everything uncertain in a single clearly-marked
-`API_SPEC` block at the top of its file:
+**Streak is now verified.** Checked against the live account and against
+Streak's own authentication docs on 2026-11-04:
 
-- `src/lib/connectors/streak.ts`
+- Auth is HTTP Basic with the API key as the username and an empty password.
+- The base URL is `https://api.streak.com/api/v1` (the documented host;
+  `www.streak.com` also answers but is undocumented).
+- All five endpoints the connector uses exist and return 200.
+- Timestamps are epoch **milliseconds**.
+- `/stages` returns an **object keyed by stage key**, not an array.
+- All 15 stages of the live *Event Planning* pipeline map to a real status.
+
+Verifying it turned up three real faults, now fixed:
+
+1. The stage *"Quoted (gets added to calendar as unconfirmed)"* was being read
+   as **accepted**, because the word "unconfirmed" contains "confirm". Every
+   merely-quoted job was being shown as committed work.
+2. The stage *"OUT (Awaiting Return) OR Awaiting payment still"* was being read
+   as **question**, hiding gear that is physically out and invoices unpaid.
+3. Seven of the fifteen stages mapped to **unknown** — which the UI labels
+   "Not in pipeline" — so dead and nurture records sat on the live board.
+
+One detail remains unverified: the box deep-link format used for `url`. Streak
+documents no permalink and returns no URL in the payload, so `BOX_URL` in the
+connector is the community format. If staff report dead links, that one line is
+the fix.
+
+**The other two are still unverified.** The environment this was built in
+blocks outbound network access to `developer.connecteam.com` and
+`onrentevents.com`, so their documentation could not be read. Rather than
+present guessed endpoint details as verified, each of those connectors keeps
+everything uncertain in a single clearly-marked `API_SPEC` block at the top of
+its file:
+
 - `src/lib/connectors/connecteam.ts`
 - `src/lib/connectors/onrent.ts`
 
@@ -51,6 +76,20 @@ other part of the app needs to move. On Rent Events deliberately refuses to run
 until configured rather than silently returning wrong data.
 
 ### Verifying a connector against the live API
+
+```bash
+npm run verify:streak
+```
+
+Checks the Streak connector against the live API: which host and auth scheme
+work, that each endpoint exists, whether timestamps are seconds or
+milliseconds, that every field the connector reads is really present — and it
+prints **every stage name in your pipeline next to the status it maps to**. Run
+it after anyone renames a stage in Streak; a stage that stops mapping shows up
+as `??`. It also prints your `STREAK_PIPELINE_KEY`.
+
+Output is field names, stage names and counts only — no client data — so it is
+safe to paste into a chat or an issue.
 
 ```bash
 npm run verify:connecteam
@@ -134,8 +173,9 @@ data.
 npm run verify
 ```
 
-Runs the typecheck and the test suite (26 tests, covering the matcher, the
-Streak stage mapping, the alert rules and timezone handling).
+Runs the typecheck and the test suite (31 tests, covering the matcher, the
+Streak stage mapping — including every real stage name in the live pipeline —
+the alert rules and timezone handling).
 
 ---
 

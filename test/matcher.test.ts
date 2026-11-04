@@ -227,6 +227,70 @@ test('the business\'s own stage names all map correctly', () => {
   assert.equal(mapStageToStatus(undefined), 'unknown');
 });
 
+/**
+ * The REAL stage names of the live "Event Planning" pipeline, read from the
+ * Streak API on 2026-11-04. These are verbatim — including the casing and the
+ * parenthetical notes the team types into Streak — because the exact wording
+ * is what the mapping has to survive.
+ *
+ * Two of these were genuinely mis-classified before being checked against the
+ * live pipeline, and both have their own regression test below.
+ */
+const LIVE_STAGES: [string, string][] = [
+  ['New Enquiries - MAKE CONTACT', 'new_enquiry'],
+  ['QUOTING & WIPS (put into here when quoting or working on)', 'quoted'],
+  ['Quoted (gets added to calendar as unconfirmed)', 'quoted'],
+  ['Accepted - PREPARATION (Gets added to Cal as confirmed)', 'accepted'],
+  ['OUT (Awaiting Return) OR Awaiting payment still', 'accepted'],
+  ['Completed jobs / Previous Jobs / Past Clients', 'completed'],
+  ['Questions, More info needed, Follow up, Limbo...', 'question'],
+  ['POSTPONED', 'question'],
+  ['Not Booked, Lost Job or Cancelled - removed from cal', 'not_accepted'],
+  ['BLACKLISTED', 'not_accepted'],
+  ['BOUNCED, INVALID, UNSUBSCRIBED', 'not_accepted'],
+  ['NOT EVENTS', 'not_accepted'],
+  ['Accounts Payable, Invoicing - Not the event organiser', 'not_accepted'],
+  ['RELATIONSHIP BUILDING', 'not_accepted'],
+  ['OLD CLIENTS TRYING TO CONTACT', 'not_accepted'],
+];
+
+test('every real stage in the live pipeline maps to the intended status', () => {
+  for (const [stage, expected] of LIVE_STAGES) {
+    assert.equal(mapStageToStatus(stage), expected, `stage: ${stage}`);
+  }
+});
+
+test('no real stage falls through to unknown', () => {
+  // 'unknown' is labelled "Not in pipeline" in the UI, so a box sitting in a
+  // genuine stage must never land there.
+  for (const [stage] of LIVE_STAGES) {
+    assert.notEqual(mapStageToStatus(stage), 'unknown', `stage: ${stage}`);
+  }
+});
+
+test('"unconfirmed" in the Quoted stage name does not read as confirmed', () => {
+  // REGRESSION: "Quoted (gets added to calendar as unconfirmed)" used to match
+  // on the "confirm" inside "unconfirmed" and come back as 'accepted', which
+  // promoted every merely-quoted job to committed work on the dashboard.
+  assert.equal(mapStageToStatus('Quoted (gets added to calendar as unconfirmed)'), 'quoted');
+  // The genuinely confirmed stage must still map to accepted.
+  assert.equal(
+    mapStageToStatus('Accepted - PREPARATION (Gets added to Cal as confirmed)'),
+    'accepted',
+  );
+});
+
+test('a job that is out or awaiting payment counts as committed work', () => {
+  // REGRESSION: this used to match on "Awaiting" and come back as 'question',
+  // hiding gear that is physically out and invoices that are unpaid.
+  assert.equal(mapStageToStatus('OUT (Awaiting Return) OR Awaiting payment still'), 'accepted');
+});
+
+test('"Not Booked" is not read as "booked"', () => {
+  assert.equal(mapStageToStatus('Not Booked, Lost Job or Cancelled - removed from cal'), 'not_accepted');
+  assert.equal(mapStageToStatus('Booked'), 'accepted');
+});
+
 // --- Action rules -----------------------------------------------------------
 
 function jobFixture(over: Partial<Job>): Job {

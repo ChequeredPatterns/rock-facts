@@ -116,8 +116,34 @@ You do not need to find the pipeline key by hand — once the API key is saved,
 the **Setup** page in Rock Factory Central lists your pipelines and tells you
 which value to use for `STREAK_PIPELINE_KEY`.
 
+The account has three pipelines; the one the dashboard wants is
+**Event Planning**. The other two (*3. SUPPLIERS* and *LEVERAGE and
+IMPROVEMENT*) are not client jobs.
+
 > ⚠️ Streak's API is on paid plans only. If the menu has no API Key option,
 > that is the reason.
+
+### If someone renames a Streak stage
+
+The dashboard works out each job's status from the **name** of the stage its
+box sits in, so renaming a stage can change what the dashboard shows. After any
+rename, run:
+
+```bash
+npm run verify:streak
+```
+
+It prints every stage in the pipeline next to the status it maps to. Anything
+marked `??` is no longer recognised and needs a rule adding to `STAGE_RULES` in
+`src/lib/connectors/streak.ts`. Nothing else in the app needs to change.
+
+Two mappings are judgement calls worth knowing about:
+
+- **RELATIONSHIP BUILDING** and **OLD CLIENTS TRYING TO CONTACT** are treated
+  as *not live jobs*, so they stay off the live board. If you would rather see
+  them for follow-up, say so — it is a one-line change.
+- **OUT (Awaiting Return) OR Awaiting payment still** counts as committed work
+  that still needs chasing, so it stays **on** the live board.
 
 ---
 

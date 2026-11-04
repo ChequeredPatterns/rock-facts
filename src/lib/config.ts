@@ -47,7 +47,7 @@ export const SYSTEMS: SystemConfig[] = [
     requiredEnv: ['STREAK_API_KEY', 'STREAK_PIPELINE_KEY'],
     setupHint:
       'Get the API key from Gmail → Streak → Integrations → API Key. The pipeline key is read automatically once the API key works.',
-    specVerified: false,
+    specVerified: true,
   },
   {
     id: 'connecteam',
