@@ -10,6 +10,10 @@ import { getDashboard } from '@/lib/data';
 import { SYSTEMS, isConfigured, missingEnv } from '@/lib/config';
 import { SYSTEM_LABELS } from '@/lib/domain';
 import { listCalendars, type CalendarSummary } from '@/lib/connectors/google';
+import {
+  listConnecteamSchedulers,
+  type SchedulerSummary,
+} from '@/lib/connectors/connecteam';
 
 export const dynamic = 'force-dynamic';
 
@@ -41,6 +45,21 @@ export default async function SetupPage() {
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);
+
+  // Connecteam's scheduler ID is not shown anywhere in Connecteam's own web
+  // interface, so list the schedulers here as soon as the API key works —
+  // otherwise the only way to find the ID is a terminal script.
+  let schedulers: SchedulerSummary[] | null = null;
+  let schedulerError: string | null = null;
+  if (process.env.CONNECTEAM_API_KEY?.trim()) {
+    try {
+      schedulers = await listConnecteamSchedulers();
+    } catch (err) {
+      schedulerError = err instanceof Error ? err.message : 'Could not read schedulers.';
+    }
+  }
+
+  const chosenScheduler = (process.env.CONNECTEAM_SCHEDULER_ID ?? '').trim();
 
   return (
     <>
@@ -106,6 +125,59 @@ export default async function SetupPage() {
           <div>
             <strong>Could not read calendars</strong>
             <p>{calendarError}</p>
+          </div>
+        </div>
+      ) : null}
+
+      {/* --- Connecteam schedulers, so the ID never needs a terminal --- */}
+      {schedulers && schedulers.length > 0 ? (
+        <section className="system connected">
+          <div className="system-head">
+            <h2>Your Connecteam schedulers</h2>
+            <span className="chip ok">{schedulers.length} found</span>
+          </div>
+          <p>
+            Copy the ID of the scheduler holding your crew shifts into{' '}
+            <code>CONNECTEAM_SCHEDULER_ID</code>. Just one, not a list. Connecteam does not show
+            these IDs anywhere in its own screens, which is why they are here.
+          </p>
+          <ul className="cal-list">
+            {schedulers.map((s) => (
+              <li key={s.id} className={chosenScheduler === s.id ? 'cal in-use' : 'cal'}>
+                <span className="cal-name">
+                  {chosenScheduler === s.id ? '✓ ' : ''}
+                  {s.name}
+                </span>
+                <code>{s.id}</code>
+              </li>
+            ))}
+          </ul>
+          {!chosenScheduler ? (
+            <p style={{ color: 'var(--soon)' }}>
+              No scheduler chosen yet, so crew shifts will not load. Pick one above.
+            </p>
+          ) : null}
+        </section>
+      ) : null}
+
+      {schedulers && schedulers.length === 0 ? (
+        <div className="banner problem">
+          <div>
+            <strong>Connecteam returned no schedulers</strong>
+            <p>
+              The API key works, but the account has no schedulers — or this plan does not expose
+              them. Create a schedule in Connecteam, or check with their support that your plan
+              includes Scheduler API access.
+            </p>
+          </div>
+        </div>
+      ) : null}
+
+      {schedulerError ? (
+        <div className="banner problem">
+          <div>
+            <strong>Could not read Connecteam schedulers</strong>
+            <p>{schedulerError}</p>
           </div>
         </div>
       ) : null}

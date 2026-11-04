@@ -97,16 +97,45 @@ async function ctGet<T>(path: string, params?: Record<string, string>): Promise<
   return (await res.json()) as T;
 }
 
+/** A scheduler as the setup page needs it: a name to recognise, an ID to copy. */
+export interface SchedulerSummary {
+  id: string;
+  name: string;
+}
+
+/**
+ * List the schedulers on the account, so the Setup page can show their IDs.
+ *
+ * This exists because `CONNECTEAM_SCHEDULER_ID` is not discoverable anywhere in
+ * Connecteam's own web interface. Without this the only way to find it is the
+ * `verify:connecteam` terminal script, which breaks the promise that nobody on
+ * the team ever has to open a terminal.
+ */
+export async function listConnecteamSchedulers(): Promise<SchedulerSummary[]> {
+  const data = await ctGet<{
+    data?: { schedulers?: { id?: string | number; schedulerId?: string | number; name?: string }[] };
+    schedulers?: { id?: string | number; schedulerId?: string | number; name?: string }[];
+  }>(API_SPEC.endpoints.schedulers);
+
+  // The documented shape is data.schedulers; accept a bare top-level array too,
+  // since this connector's spec is not yet confirmed against the live API.
+  const raw = data?.data?.schedulers ?? data?.schedulers ?? [];
+
+  return raw
+    .map((s) => {
+      const id = s.id ?? s.schedulerId;
+      return id == null ? null : { id: String(id), name: s.name ?? String(id) };
+    })
+    .filter((s): s is SchedulerSummary => s !== null);
+}
+
 export async function verifyConnecteam(): Promise<{ ok: true; detail: string }> {
-  const data = await ctGet<{ data?: { schedulers?: { id?: string; name?: string }[] } }>(
-    API_SPEC.endpoints.schedulers,
-  );
-  const schedulers = data?.data?.schedulers ?? [];
+  const schedulers = await listConnecteamSchedulers();
   return {
     ok: true,
     detail:
       schedulers.length > 0
-        ? `Connected. Schedulers found: ${schedulers.map((s) => s.name ?? s.id).join(', ')}`
+        ? `Connected. Schedulers found: ${schedulers.map((s) => `${s.name} (${s.id})`).join(', ')}`
         : 'Connected, but no schedulers were returned.',
   };
 }

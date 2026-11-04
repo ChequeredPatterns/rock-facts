@@ -125,15 +125,26 @@ which value to use for `STREAK_PIPELINE_KEY`.
 
 1. Sign in to Connecteam as the **owner** account.
 2. **General Settings** → **API keys** tab → create a key.
-3. Copy it. That is `CONNECTEAM_API_KEY`.
+3. Copy it. That is `CONNECTEAM_API_KEY`. Add it on Netlify and trigger a deploy.
 
-> ⚠️ **Check this before anyone pays for anything.** Connecteam restricts API
-> access to its higher-priced plans, and the published information disagrees on
-> which one — their help centre says Enterprise, a third-party review says the
-> Expert tier. Ask Connecteam support directly which plan includes API access
-> and what it costs. If the answer is expensive, say so: Rock Factory Central
-> works perfectly well without Connecteam, it just shows crew from the per-person
-> Google Calendars instead, which you already have for free.
+### Then pick the scheduler
+
+Connecteam needs a second value, `CONNECTEAM_SCHEDULER_ID`, which says *which*
+schedule holds your crew shifts. **Connecteam does not show this ID anywhere in
+its own screens**, so don't go hunting for it.
+
+Once the API key above is saved and deployed, go to `/setup` in Rock Factory
+Central. It lists every scheduler on the account with its ID, the same way it
+lists your calendars. Copy the one holding crew shifts into
+`CONNECTEAM_SCHEDULER_ID` — just one, not a comma-separated list — and trigger
+a deploy.
+
+> If you'd rather not wait for a deploy, `npm run verify:connecteam` prints the
+> same list from a terminal. The Setup page exists so you never have to.
+
+> ⚠️ Connecteam restricts API access to its higher-priced plans. If the **API
+> keys** tab isn't there, that is the reason — and Rock Factory Central works
+> fine without it, showing crew from the per-person Google Calendars instead.
 
 ---
 
