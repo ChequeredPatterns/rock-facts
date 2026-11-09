@@ -46,7 +46,12 @@ interface ConnecteamShift {
   status?: string;
   locationData?: { address?: string; name?: string };
   jobId?: string;
-  notes?: string;
+  /**
+   * Confirmed against the live API: this is an ARRAY, not the string the name
+   * suggests. Typed loosely and flattened by `notesText` below, because the
+   * entry shape is not documented and was empty in every live sample.
+   */
+  notes?: unknown;
   assignedUserIds?: (string | number)[];
   users?: { userId?: string | number; firstName?: string; lastName?: string; status?: string }[];
 }
@@ -141,6 +146,71 @@ export async function verifyConnecteam(): Promise<{ ok: true; detail: string }> 
 }
 
 /**
+ * The longest span Connecteam will accept on the shifts endpoint.
+ *
+ * Confirmed against the live API, which answers a wider request with
+ * HTTP 400 and "Date range cannot be more than 92 days". The dashboard asks
+ * for 150 days (30 back, 120 ahead), so a single call always failed and crew
+ * never loaded at all. 90 leaves a margin in case the limit is measured
+ * slightly differently at their end.
+ */
+export const MAX_WINDOW_DAYS = 90;
+
+/** Only a genuine string, so a surprising API shape cannot crash a caller. */
+function asString(v: unknown): string | undefined {
+  return typeof v === 'string' && v.trim() ? v : undefined;
+}
+
+/**
+ * Flatten whatever `notes` turns out to be into searchable text.
+ *
+ * Live responses give an array; the entries were empty in every sample, so
+ * both plain strings and objects carrying a text-ish field are handled rather
+ * than guessing one and being wrong.
+ */
+export function notesText(notes: unknown): string | undefined {
+  const parts: string[] = [];
+  const visit = (v: unknown, depth = 0): void => {
+    if (depth > 3 || v == null) return;
+    if (typeof v === 'string') {
+      if (v.trim()) parts.push(v);
+      return;
+    }
+    if (Array.isArray(v)) {
+      for (const item of v) visit(item, depth + 1);
+      return;
+    }
+    if (typeof v === 'object') {
+      for (const key of ['text', 'note', 'body', 'content', 'value']) {
+        const inner = (v as Record<string, unknown>)[key];
+        if (typeof inner === 'string' && inner.trim()) parts.push(inner);
+      }
+    }
+  };
+  visit(notes);
+  return parts.length ? parts.join(' ') : undefined;
+}
+
+/** Split a span into consecutive windows no longer than the API allows. */
+export function splitIntoWindows(
+  from: Date,
+  to: Date,
+  maxDays = MAX_WINDOW_DAYS,
+): { from: Date; to: Date }[] {
+  const span = maxDays * 86_400_000;
+  if (!(to.getTime() > from.getTime())) return [{ from, to }];
+
+  const windows: { from: Date; to: Date }[] = [];
+  let cursor = from.getTime();
+  while (cursor < to.getTime()) {
+    const end = Math.min(cursor + span, to.getTime());
+    windows.push({ from: new Date(cursor), to: new Date(end) });
+    cursor = end;
+  }
+  return windows;
+}
+
+/**
  * Fetch shifts in a window and group them into one PartialJob per shift title
  * + date. Connecteam models individual shifts, not jobs, so several crew on
  * the same event arrive as separate shift records that we fold together.
@@ -151,12 +221,16 @@ export async function fetchConnecteamJobs(from: Date, to: Date): Promise<Partial
     throw new Error('Connecteam is not configured: CONNECTEAM_SCHEDULER_ID is missing.');
   }
 
-  const [shiftPayload, userPayload] = await Promise.all([
-    ctGet<{ data?: { shifts?: ConnecteamShift[] } }>(API_SPEC.endpoints.shifts(schedulerId), {
-      startTime: String(Math.floor(from.getTime() / 1000)),
-      endTime: String(Math.floor(to.getTime() / 1000)),
-      limit: '500',
-    }),
+  const [shiftChunks, userPayload] = await Promise.all([
+    Promise.all(
+      splitIntoWindows(from, to).map((w) =>
+        ctGet<{ data?: { shifts?: ConnecteamShift[] } }>(API_SPEC.endpoints.shifts(schedulerId), {
+          startTime: String(Math.floor(w.from.getTime() / 1000)),
+          endTime: String(Math.floor(w.to.getTime() / 1000)),
+          limit: '500',
+        }),
+      ),
+    ),
     ctGet<{ data?: { users?: ConnecteamUser[] } }>(API_SPEC.endpoints.users, {
       limit: '500',
     }).catch(() => ({ data: { users: [] as ConnecteamUser[] } })),
@@ -168,7 +242,17 @@ export async function fetchConnecteamJobs(from: Date, to: Date): Promise<Partial
     if (id) userNames.set(id, [u.firstName, u.lastName].filter(Boolean).join(' ') || id);
   }
 
-  const shifts = shiftPayload?.data?.shifts ?? [];
+  // De-duplicate across windows: a shift on a boundary can come back twice.
+  const seen = new Set<string>();
+  const shifts: ConnecteamShift[] = [];
+  for (const chunk of shiftChunks) {
+    for (const s of chunk?.data?.shifts ?? []) {
+      const id = String(s.id ?? s.shiftId ?? `${s.title}|${s.startTime}|${s.endTime}`);
+      if (seen.has(id)) continue;
+      seen.add(id);
+      shifts.push(s);
+    }
+  }
 
   // Group shifts that belong to the same job: same title, same calendar day.
   const groups = new Map<string, { shifts: ConnecteamShift[]; start?: string }>();
@@ -229,8 +313,10 @@ export async function fetchConnecteamJobs(from: Date, to: Date): Promise<Partial
       system: 'connecteam',
       externalId: String(first.id ?? first.shiftId ?? key),
       lastActivityAt: toIso(first.startTime),
-      ref: extractRef(first.title) ?? extractRef(first.notes),
-      clientName: (first.title ?? 'Untitled shift').replace(/\bRF[-\s]?\d{3,}\b/i, '').trim(),
+      ref: extractRef(first.title) ?? extractRef(notesText(first.notes)),
+      clientName:
+        (asString(first.title) ?? 'Untitled shift').replace(/\bRF[-\s]?\d{3,}\b/i, '').trim() ||
+        'Untitled shift',
       eventStart: toIso(first.startTime),
       eventEnd: toIso(group.shifts[group.shifts.length - 1]?.endTime ?? first.endTime),
       venue: first.locationData?.address ?? first.locationData?.name,

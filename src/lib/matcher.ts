@@ -52,8 +52,14 @@ const DATE_TOLERANCE_DAYS = 1;
  * Deliberately requires 3+ digits so a bare "21st" in an event title is not
  * mistaken for a job number.
  */
-export function extractRef(text: string | undefined): string | undefined {
-  if (!text) return undefined;
+/**
+ * Every caller feeds this straight from a vendor API, where a field documented
+ * as a string is not always one — Connecteam returns `notes` as an array, for
+ * instance. So the type is checked at runtime rather than trusted: the
+ * alternative was an exception that took the whole connector down.
+ */
+export function extractRef(text: unknown): string | undefined {
+  if (typeof text !== 'string' || !text) return undefined;
   const patterns = [
     /\bRF[-\s]?(\d{3,})\b/i,
     /#(\d{3,})\b/,

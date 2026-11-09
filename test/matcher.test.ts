@@ -9,6 +9,7 @@ import {
 } from '../src/lib/matcher';
 import { mapStageToStatus } from '../src/lib/connectors/streak';
 import { mapOnRentStatus } from '../src/lib/connectors/onrent';
+import { notesText, splitIntoWindows } from '../src/lib/connectors/connecteam';
 import {
   gateMode,
   isAllowedViewer,
@@ -677,4 +678,66 @@ test('a password session cannot be re-labelled as a Google one', async () => {
       assert.equal(await verifySession(`${swapped}.${tag}`), null);
     },
   );
+});
+
+// --- Connecteam's 92-day ceiling -------------------------------------------
+// The live API answers a wider span with HTTP 400 "Date range cannot be more
+// than 92 days". The dashboard asks for 150 days, so without splitting, crew
+// data never loaded at all.
+
+test('the dashboard window is split into windows the API will accept', () => {
+  const from = new Date('2026-01-01T00:00:00Z');
+  const to = new Date(from.getTime() + 150 * 86_400_000);
+  const windows = splitIntoWindows(from, to);
+
+  assert.ok(windows.length >= 2, 'a 150-day span cannot be one request');
+  for (const w of windows) {
+    const days = (w.to.getTime() - w.from.getTime()) / 86_400_000;
+    assert.ok(days <= 92, `window of ${days} days exceeds the API limit`);
+  }
+  // The windows must tile the span exactly: no gap would silently drop shifts.
+  assert.equal(windows[0].from.getTime(), from.getTime());
+  assert.equal(windows[windows.length - 1].to.getTime(), to.getTime());
+  for (let i = 1; i < windows.length; i++) {
+    assert.equal(windows[i].from.getTime(), windows[i - 1].to.getTime(), 'no gap');
+  }
+});
+
+test('a span already within the limit stays a single request', () => {
+  const from = new Date('2026-01-01T00:00:00Z');
+  const to = new Date(from.getTime() + 30 * 86_400_000);
+  assert.equal(splitIntoWindows(from, to).length, 1);
+});
+
+test('a zero-length or inverted span does not loop forever', () => {
+  const d = new Date('2026-01-01T00:00:00Z');
+  assert.equal(splitIntoWindows(d, d).length, 1);
+  assert.equal(splitIntoWindows(d, new Date(d.getTime() - 86_400_000)).length, 1);
+});
+
+// --- Connecteam's `notes` is not a string ----------------------------------
+// The field is documented as text but the live API returns an array. Feeding
+// that straight to extractRef threw and took the whole connector down.
+
+test('notes survives whatever shape the API sends', () => {
+  assert.equal(notesText(undefined), undefined);
+  assert.equal(notesText(null), undefined);
+  assert.equal(notesText([]), undefined, 'the live case: an empty array');
+  assert.equal(notesText('RF-1042 load in'), 'RF-1042 load in');
+  assert.equal(notesText(['RF-1042', 'load in']), 'RF-1042 load in');
+  assert.equal(notesText([{ text: 'RF-1042' }]), 'RF-1042');
+  assert.equal(notesText({ body: 'RF-1042' }), 'RF-1042');
+  assert.equal(notesText([42, true]), undefined, 'non-text entries are ignored');
+});
+
+test('a job number is still found inside array-shaped notes', () => {
+  assert.equal(extractRef(notesText([{ text: 'job RF-1042 on site' }])), 'RF-1042');
+});
+
+test('extractRef refuses non-strings instead of throwing', () => {
+  // This is the exact crash: an array reached extractRef and .match blew up.
+  assert.equal(extractRef([] as unknown), undefined);
+  assert.equal(extractRef({} as unknown), undefined);
+  assert.equal(extractRef(42 as unknown), undefined);
+  assert.equal(extractRef(null as unknown), undefined);
 });
